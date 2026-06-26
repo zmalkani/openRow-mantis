@@ -11,7 +11,7 @@ namespace {
 int ID = 0000;
 
 constexpr uint32_t kSerialBaud = 115200;
-constexpr uint32_t kPacketIntervalMs = 100;
+constexpr uint32_t kPacketIntervalMs = 40;  // ~34ms airtime at BW250+binary, 6ms margin
 
 // ADXL345 IMU on separate I2C bus (Wire1)
 constexpr int kImuSda = 7;
@@ -38,7 +38,7 @@ constexpr int kLoRaBusy = 13;
 constexpr int kLoRaDio1 = 14;
 
 constexpr float kLoRaFrequencyMhz = 915.0;
-constexpr float kLoRaBandwidthKhz = 125.0;
+constexpr float kLoRaBandwidthKhz = 250.0;  // 250kHz: ~34ms airtime vs ~55ms at 125kHz
 constexpr uint8_t kLoRaSpreadingFactor = 7;
 constexpr uint8_t kLoRaCodingRate = 5;
 constexpr uint8_t kLoRaSyncWord = 0x12;
@@ -48,6 +48,15 @@ constexpr float kLoRaTcxoVoltage = 1.7;
 
 SX1262 radio = new Module(kLoRaNss, kLoRaDio1, kLoRaRst, kLoRaBusy);
 Adafruit_SSD1306 display(kOledWidth, kOledHeight, &Wire, kOledRst);
+
+// Binary telemetry packet — 18 bytes vs ~37 bytes ASCII, cuts airtime ~40%
+struct __attribute__((packed)) TelemetryPacket {
+  uint32_t timestampMs;
+  float accX;
+  float accY;
+  float accZ;
+  uint16_t deviceId;
+};
 
 // ADXL345 IMU constants
 constexpr uint8_t kAdxlAddress = 0x53;
@@ -254,15 +263,17 @@ void updateDisplay(uint32_t timestampMs, float accMps2) {
 }
 
 void sendTelemetryPacket(uint32_t timestampMs, float accMps2, int ID) {
-  char packet[64];
-  snprintf(packet, sizeof(packet), "%lu,%.3f,%.3f,%.3f,%d",
-           static_cast<unsigned long>(timestampMs), 
-           lastAccXMps2, lastAccYMps2, lastAccZMps2, ID);
+  TelemetryPacket pkt;
+  pkt.timestampMs = timestampMs;
+  pkt.accX = lastAccXMps2;
+  pkt.accY = lastAccYMps2;
+  pkt.accZ = lastAccZMps2;
+  pkt.deviceId = static_cast<uint16_t>(ID);
 
-  Serial.print(F("TX "));
-  Serial.println(packet);
+  Serial.printf("TX t=%lu x=%.3f y=%.3f z=%.3f id=%d\n",
+                timestampMs, pkt.accX, pkt.accY, pkt.accZ, pkt.deviceId);
 
-  const int16_t state = radio.transmit(packet);
+  const int16_t state = radio.transmit(reinterpret_cast<uint8_t*>(&pkt), sizeof(pkt));
   if (state != RADIOLIB_ERR_NONE) {
     printRadioError(state);
   }

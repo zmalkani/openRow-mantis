@@ -8,7 +8,7 @@
 #include <NimBLEServer.h>
 #include <NimBLEUtils.h>
 #include <NimBLEAdvertising.h>
- 
+
 namespace {
 
 constexpr uint32_t kSerialBaud = 115200;
@@ -33,7 +33,7 @@ constexpr int kLoRaBusy = 13;
 constexpr int kLoRaDio1 = 14;
 
 constexpr float kLoRaFrequencyMhz = 915.0;
-constexpr float kLoRaBandwidthKhz = 125.0;
+constexpr float kLoRaBandwidthKhz = 250.0;  // must match TX
 constexpr uint8_t kLoRaSpreadingFactor = 7;
 constexpr uint8_t kLoRaCodingRate = 5;
 constexpr uint8_t kLoRaSyncWord = 0x12;
@@ -43,6 +43,15 @@ constexpr float kLoRaTcxoVoltage = 1.7;
 
 SX1262 radio = new Module(kLoRaNss, kLoRaDio1, kLoRaRst, kLoRaBusy);
 Adafruit_SSD1306 display(kOledWidth, kOledHeight, &Wire, kOledRst);
+
+// Binary telemetry packet — must match TXmain.cpp exactly
+struct __attribute__((packed)) TelemetryPacket {
+  uint32_t timestampMs;
+  float accX;
+  float accY;
+  float accZ;
+  uint16_t deviceId;
+};
 
 // BLE components
 NimBLEServer* pServer = nullptr;
@@ -165,25 +174,6 @@ bool startRadio() {
   return true;
 }
 
-bool parseTelemetryPacket(const String& packet, uint32_t* timestampMs, float* accX, float* accY, float* accZ, uint16_t* deviceId) {
-  unsigned long parsedTimestamp = 0;
-  float parsedAccX = 0.0f;
-  float parsedAccY = 0.0f;
-  float parsedAccZ = 0.0f;
-  unsigned int parsedDeviceId = 0;
-
-  if (sscanf(packet.c_str(), "%lu,%f,%f,%f,%u", &parsedTimestamp, &parsedAccX, &parsedAccY, &parsedAccZ, &parsedDeviceId) != 5) {
-    return false;
-  }
-
-  *timestampMs = static_cast<uint32_t>(parsedTimestamp);
-  *accX = parsedAccX;
-  *accY = parsedAccY;
-  *accZ = parsedAccZ;
-  *deviceId = static_cast<uint16_t>(parsedDeviceId);
-  return true;
-}
-
 void updateDisplay() {
   if (!displayReady) {
     return;
@@ -265,62 +255,27 @@ void updateDisplay() {
 void handleReceivedPacket() {
   receivedFlag = false;
 
-  String packet;
-  const int16_t state = radio.readData(packet);
+  TelemetryPacket pkt;
+  const int16_t state = radio.readData(reinterpret_cast<uint8_t*>(&pkt), sizeof(pkt));
   if (state == RADIOLIB_ERR_NONE) {
-    uint32_t timestampMs = 0;
-    float accX = 0.0f;
-    float accY = 0.0f;
-    float accZ = 0.0f;
-    uint16_t deviceId = 0;
+    Serial.printf("RX t=%lu x=%.3f y=%.3f z=%.3f id=%u\n",
+                  pkt.timestampMs, pkt.accX, pkt.accY, pkt.accZ, pkt.deviceId);
 
-    Serial.print(F("RX "));
-    Serial.println(packet);
+    lastTimestampMs = pkt.timestampMs;
+    lastDeviceId    = pkt.deviceId;
+    lastAccXMps2    = pkt.accX;
+    lastAccYMps2    = pkt.accY;
+    lastAccZMps2    = pkt.accZ;
+    lastRssiDbm     = radio.getRSSI();
+    lastSnrDb       = radio.getSNR();
+    lastPacketAtMs  = millis();
+    packetCount++;
 
-    if (parseTelemetryPacket(packet, &timestampMs, &accX, &accY, &accZ, &deviceId)) {
-      lastTimestampMs = timestampMs;
-      lastDeviceId = deviceId;
-      lastAccXMps2 = accX;
-      lastAccYMps2 = accY;
-      lastAccZMps2 = accZ;
-      lastRssiDbm = radio.getRSSI();
-      lastSnrDb = radio.getSNR();
-      lastPacketAtMs = millis();
-      packetCount++;
-
-      // Broadcast over BLE (send primary X axis for rowing)
-      if (bleReady && pTelemetryCharacteristic) {
-        String blePayload = String(lastTimestampMs) + "," + 
-                           String(lastAccXMps2, 3);
-        Serial.print(F("BLE notify: "));
-        Serial.println(blePayload);
-        pTelemetryCharacteristic->setValue(blePayload.c_str());
-        int notifyResult = pTelemetryCharacteristic->notify();
-        Serial.print(F("notify result: "));
-        Serial.println(notifyResult);
-      } else {
-        Serial.print(F("BLE not ready: bleReady="));
-        Serial.print(bleReady);
-        Serial.print(F(" pChar="));
-        Serial.println((uint32_t)pTelemetryCharacteristic, HEX);
-      }
-
-      Serial.print(F("parsed timestamp_ms="));
-      Serial.print(lastTimestampMs);
-      Serial.print(F(" device_id="));
-      Serial.print(lastDeviceId);
-      Serial.print(F(" accX="));
-      Serial.print(lastAccXMps2, 3);
-      Serial.print(F(" accY="));
-      Serial.print(lastAccYMps2, 3);
-      Serial.print(F(" accZ="));
-      Serial.print(lastAccZMps2, 3);
-      Serial.print(F(" rssi_dbm="));
-      Serial.print(lastRssiDbm, 1);
-      Serial.print(F(" snr_db="));
-      Serial.println(lastSnrDb, 1);
-    } else {
-      Serial.println(F("Packet parse failed. Expected: timestamp_ms,accX,accY,accZ,device_id"));
+    // Broadcast over BLE (primary X axis for rowing)
+    if (bleReady && pTelemetryCharacteristic) {
+      String blePayload = String(lastTimestampMs) + "," + String(lastAccXMps2, 3);
+      pTelemetryCharacteristic->setValue(blePayload.c_str());
+      pTelemetryCharacteristic->notify();
     }
   } else {
     printRadioError(state);

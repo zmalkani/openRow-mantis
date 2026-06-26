@@ -8,7 +8,7 @@
 #include <NimBLEServer.h>
 #include <NimBLEUtils.h>
 #include <NimBLEAdvertising.h>
-
+ 
 namespace {
 
 constexpr uint32_t kSerialBaud = 115200;

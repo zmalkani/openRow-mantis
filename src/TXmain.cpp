@@ -30,7 +30,6 @@ constexpr float kBatteryDividerRatio = 4.9f * 1.045f;  // Meshtastic Heltec V3: 
 constexpr float kBatteryEmptyVolts = 3.30f;
 constexpr float kBatteryFullVolts = 4.20f;
 
-constexpr uint32_t kSplashDurationMs = 1000;
 
 // Heltec WiFi LoRa 32 V3 onboard SX1262 wiring.
 constexpr int kLoRaNss = 8;
@@ -162,12 +161,7 @@ void showSplash() {
   if (!displayReady) {
     return;
   }
-  display.clearDisplay();
-  display.drawBitmap((kOledWidth - kLogoWidth) / 2,
-                     (kOledHeight - kLogoHeight) / 2,
-                     kOpenRowLogo, kLogoWidth, kLogoHeight, SSD1306_WHITE);
-  display.display();
-  delay(kSplashDurationMs);
+  showOpenRowSplash(display);
 }
 
 bool startIMU() {

@@ -13,7 +13,6 @@
 
 namespace {
 
-constexpr uint32_t kSplashDurationMs = 1000;
 
 constexpr uint32_t kSerialBaud = 115200;
 constexpr uint32_t kDisplayRefreshMs = 250;
@@ -152,12 +151,7 @@ void showSplash() {
   if (!displayReady) {
     return;
   }
-  display.clearDisplay();
-  display.drawBitmap((kOledWidth - kLogoWidth) / 2,
-                     (kOledHeight - kLogoHeight) / 2,
-                     kOpenRowLogo, kLogoWidth, kLogoHeight, SSD1306_WHITE);
-  display.display();
-  delay(kSplashDurationMs);
+  showOpenRowSplash(display);
 }
 
 bool startRadio() {

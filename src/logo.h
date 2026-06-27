@@ -5,6 +5,9 @@
 #define OPENROW_LOGO_H
 
 #include <Arduino.h>
+#include <Adafruit_SSD1306.h>
+
+constexpr uint32_t kSplashDurationMs = 1000;
 
 constexpr int kLogoWidth = 84;
 constexpr int kLogoHeight = 63;
@@ -68,5 +71,15 @@ const unsigned char kOpenRowLogo[] PROGMEM = {
   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 };
+
+// Draws the openRow logo centered on the display and holds it for ~1s.
+inline void showOpenRowSplash(Adafruit_SSD1306& display) {
+  display.clearDisplay();
+  display.drawBitmap((display.width() - kLogoWidth) / 2,
+                     (display.height() - kLogoHeight) / 2,
+                     kOpenRowLogo, kLogoWidth, kLogoHeight, SSD1306_WHITE);
+  display.display();
+  delay(kSplashDurationMs);
+}
 
 #endif  // OPENROW_LOGO_H

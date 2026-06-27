@@ -1,14 +1,11 @@
-# openRow Mantis
+# openRow mantis
 
-openRow Mantis is a small rowing telemetry rig I built to get live acceleration data off the boat and onto a screen the coach can actually read while following alongside. One unit rides in the boat, reads the hull's acceleration, and sends it over a long-range radio link. A second unit on the coach's side catches those readings and hands them to a web page over Bluetooth, so you watch the stroke trace in real time on a phone or laptop.
-
-It's deliberately stripped down. No force pads, no oarlock sensors, no app to install. Just acceleration and time, plotted live. If you've used the original openRow with the OR-1 display and oarlock, Mantis is the lighter, faster cousin that trades features for simplicity and range.
+openRow Mantis is a simple rowing telemetry rig I built to get live acceleration data off the boat and onto a screen the coach can actually read while following alongside. One unit rides in the boat, reads the hull's acceleration, and sends it over a LoRa radio link. A second unit on the coach's side reads the data and hands it to a web page over Bluetooth, so you watch the stroke trace in real time on a phone or laptop.
 
 ## How it works
+There are two units talking to each other:
 
-There are two boards talking to each other:
-
-- **TX (in the boat)** — sits in the hull with an accelerometer wired up. Every 40 ms or so it reads X/Y/Z acceleration and fires off a tiny radio packet over 915 MHz LoRa. Its little OLED shows the live numbers, the device ID, and battery level.
+- **TX (in the boat)** — sits in the hull with an accelerometer wired up. It reads X/Y/Z acceleration and fires off a tiny radio packet over 915 mHz LoRa. Its little OLED shows the live numbers, the device ID, and battery level.
 - **RX (with the coach)** — listens for those packets, shows them on its own OLED (acceleration, signal strength, packet count), and re-broadcasts the data over Bluetooth Low Energy.
 
 The web dashboard (`mantis.html`) connects to the RX unit over Web Bluetooth and draws the acceleration-vs-time graph. Nothing gets installed; it runs straight from the browser.
@@ -17,36 +14,24 @@ The packets are sent as raw binary (18 bytes) instead of text to keep airtime sh
 
 ## Parts list
 
-You need two Heltec boards — one becomes the TX, one becomes the RX — plus an accelerometer and batteries.
-
 | Part | Qty | Notes |
 | --- | --- | --- |
 | Heltec WiFi LoRa 32 V3 | 2 | ESP32-S3 board with an onboard SX1262 LoRa radio and a small OLED. One flashed as TX, one as RX. |
 | ADXL345 accelerometer | 1 | Lives on the TX board, in the boat. Wired to I2C (SDA on GPIO 7, SCL on GPIO 6). |
-| 915 MHz antenna | 2 | One per board. Don't power the radios up without antennas attached. |
+| 915 MHz antenna / U.FL cable | 2 | One per board. Don't power the radios up without antennas attached.  |
 | LiPo battery (3.7 V) | 2 | One per board. The Heltec V3 has a built-in charger and battery connector. |
 | Waterproof case / dry bag | 1+ | For the in-boat TX unit especially. Rowing and water go together. |
 | Jumper wires | a few | For the ADXL345 to TX connections. |
 
 A couple of things worth knowing about the hardware:
 
+- DO NOT power on the board or plug into battery if the antenna is not plugged in, it will fry the LoRa chip and kill the devices range.
 - The boards are wired for the **915 MHz** band (good for North America). If you're somewhere that uses 868 MHz or another band, change `kLoRaFrequencyMhz` in `src/TXmain.cpp` and `src/RXmain.cpp` to stay legal.
 - The OLED and battery monitoring are already on the Heltec board, so you don't add anything for those.
 
 ## Building and flashing the firmware
 
-The firmware lives in `src/` and builds with [PlatformIO](https://platformio.org/). Both boards run from the same project, just different environments:
-
-- Flash one board with the `heltec_wifi_lora_32_V3` environment — that's the **TX**.
-- Flash the other with the `heltec_wifi_lora_32_V3_rx` environment — that's the **RX**.
-
-```sh
-# transmitter (in-boat unit)
-pio run -e heltec_wifi_lora_32_V3 -t upload
-
-# receiver (coach unit)
-pio run -e heltec_wifi_lora_32_V3_rx -t upload
-```
+The firmware lives in `src/` and builds with PlatformIO. Both boards run from the same project, just different environments:
 
 Before flashing the TX, you can set its 4-digit `ID` near the top of `src/TXmain.cpp` if you're running more than one boat.
 
@@ -78,3 +63,4 @@ The two UUID fields in the config bar (Service UUID and Char UUID) are pre-fille
 - Keep the TX and RX on the same radio settings. They're matched in the firmware already; if you change frequency, bandwidth, or spreading factor on one, change it on both or they'll go deaf to each other.
 - Range depends a lot on antenna placement and how much of the boat is between the two units. Getting the antenna up and clear helps.
 - This is a hobby project, not a certified product. Check your local rules before transmitting on any radio band.
+- Please contribute if you'd like to help the project and make it better!

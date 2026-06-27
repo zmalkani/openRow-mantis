@@ -5,6 +5,8 @@
 #include <SPI.h>
 #include <Wire.h>
 
+#include "logo.h"
+
 namespace {
 
 //TX DEVICE ID - 4 digit identifier
@@ -27,6 +29,7 @@ constexpr int kOledHeight = 64;
 constexpr float kBatteryDividerRatio = 4.9f * 1.045f;  // Meshtastic Heltec V3: 4.9 * 1.045
 constexpr float kBatteryEmptyVolts = 3.30f;
 constexpr float kBatteryFullVolts = 4.20f;
+
 
 // Heltec WiFi LoRa 32 V3 onboard SX1262 wiring.
 constexpr int kLoRaNss = 8;
@@ -152,6 +155,13 @@ bool startDisplay() {
   display.println(F("openRow HV3 mvp ptp"));
   display.display();
   return true;
+}
+
+void showSplash() {
+  if (!displayReady) {
+    return;
+  }
+  showOpenRowSplash(display);
 }
 
 bool startIMU() {
@@ -293,6 +303,7 @@ void setup() {
 
   Serial.println(F("Starting display..."));
   displayReady = startDisplay();
+  showSplash();
   Serial.print(F("Display ready: "));
   Serial.println(displayReady ? "YES" : "FAIL");
 

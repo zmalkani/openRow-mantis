@@ -9,7 +9,10 @@
 #include <NimBLEUtils.h>
 #include <NimBLEAdvertising.h>
 
+#include "logo.h"
+
 namespace {
+
 
 constexpr uint32_t kSerialBaud = 115200;
 constexpr uint32_t kDisplayRefreshMs = 250;
@@ -142,6 +145,13 @@ bool startDisplay() {
   display.println(F("waiting for LoRa"));
   display.display();
   return true;
+}
+
+void showSplash() {
+  if (!displayReady) {
+    return;
+  }
+  showOpenRowSplash(display);
 }
 
 bool startRadio() {
@@ -298,6 +308,7 @@ void setup() {
   Serial.println(F("expected packet: timestamp_ms,accX,accY,accZ,device_id"));
 
   displayReady = startDisplay();
+  showSplash();
 
   bleReady = startBLE();
   if (!bleReady) {

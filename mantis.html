@@ -175,6 +175,7 @@
   const CSV_HEADER = 'wall_time,device_uptime_ms,acceleration_ms2';
   const MAX_POINTS = 30000;       // retain a long history so it can be scrolled
   const WINDOW_SEC = 30;          // visible time span of the chart
+  const CHART_PAD = { top: 12, right: 12, bottom: 26, left: 48 }; // px padding inside the chart
   const accData = [];
   let sessionStartMs = null;
   let viewEndTime = null;         // right edge of the view (seconds); null = follow live
@@ -197,7 +198,7 @@
     const W = canvas.getBoundingClientRect().width;
     const H = canvas.getBoundingClientRect().height;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    const PAD = { top: 12, right: 12, bottom: 26, left: 48 };
+    const PAD = CHART_PAD;
     const plotW = W - PAD.left - PAD.right;
     const plotH = H - PAD.top  - PAD.bottom;
     ctx.fillStyle = '#f4f6f9';
@@ -315,11 +316,11 @@
     dragStartX = e.clientX;
     dragStartEnd = (viewEndTime === null) ? accData[accData.length - 1].x : viewEndTime;
     accCanvas.classList.add('grabbing');
-    try { accCanvas.setPointerCapture(e.pointerId); } catch (_) {}
+    try { accCanvas.setPointerCapture(e.pointerId); } catch (_) {} // ignore: pointer capture unsupported
   });
   accCanvas.addEventListener('pointermove', e => {
     if (!isDragging) return;
-    const plotW = Math.max(1, accCanvas.getBoundingClientRect().width - 60); // PAD.left + PAD.right
+    const plotW = Math.max(1, accCanvas.getBoundingClientRect().width - (CHART_PAD.left + CHART_PAD.right));
     const secPerPx = WINDOW_SEC / plotW;
     viewEndTime = dragStartEnd - (e.clientX - dragStartX) * secPerPx;
     clampView();
@@ -329,7 +330,7 @@
     if (!isDragging) return;
     isDragging = false;
     accCanvas.classList.remove('grabbing');
-    try { accCanvas.releasePointerCapture(e.pointerId); } catch (_) {}
+    try { accCanvas.releasePointerCapture(e.pointerId); } catch (_) {} // ignore: pointer capture unsupported
   }
   accCanvas.addEventListener('pointerup', endDrag);
   accCanvas.addEventListener('pointercancel', endDrag);

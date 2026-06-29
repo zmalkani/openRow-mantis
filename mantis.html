@@ -478,7 +478,10 @@
 
     const ts  = parts[0].trim();
     const acc = parseFloat(parts[1]);
-    if (!isFinite(acc)) return;
+    if (!isFinite(acc)) {
+      logEntry('error', `Invalid acceleration packet: ${raw.trim()}`);
+      return;
+    }
     const parsedDeviceId = (parts[2] || '').trim();
     const deviceId = parsedDeviceId || 'unknown';
 

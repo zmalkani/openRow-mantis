@@ -36,7 +36,7 @@ constexpr int kLoRaBusy = 13;
 constexpr int kLoRaDio1 = 14;
 
 constexpr float kLoRaFrequencyMhz = 915.0;
-constexpr float kLoRaBandwidthKhz = 250.0;  // must match TX
+constexpr float kLoRaBandwidthKhz = 500.0;  // must match TX
 constexpr uint8_t kLoRaSpreadingFactor = 7;
 constexpr uint8_t kLoRaCodingRate = 5;
 constexpr uint8_t kLoRaSyncWord = 0x12;
@@ -51,8 +51,6 @@ Adafruit_SSD1306 display(kOledWidth, kOledHeight, &Wire, kOledRst);
 struct __attribute__((packed)) TelemetryPacket {
   uint32_t timestampMs;
   float accX;
-  float accY;
-  float accZ;
   uint16_t deviceId;
 };
 
@@ -72,8 +70,6 @@ uint32_t lastPacketAtMs = 0;
 uint32_t lastTimestampMs = 0;
 uint16_t lastDeviceId = 0;
 float lastAccXMps2 = 0.0f;
-float lastAccYMps2 = 0.0f;
-float lastAccZMps2 = 0.0f;
 float lastRssiDbm = 0.0f;
 float lastSnrDb = 0.0f;
 uint32_t packetCount = 0;
@@ -235,16 +231,13 @@ void updateDisplay() {
   if (hasPacket) {
     display.print(F("X:"));
     display.print(lastAccXMps2, 2);
-    display.print(F(" Y:"));
-    display.print(lastAccYMps2, 2);
   } else {
     display.print(F("acc --"));
   }
 
   display.setCursor(0, 53);
   if (hasPacket) {
-    display.print(F("Z:"));
-    display.print(lastAccZMps2, 2);
+    display.print(F("m/s2"));
   }
 
   display.drawFastVLine(86, 39, 25, SSD1306_WHITE);
@@ -268,14 +261,12 @@ void handleReceivedPacket() {
   TelemetryPacket pkt;
   const int16_t state = radio.readData(reinterpret_cast<uint8_t*>(&pkt), sizeof(pkt));
   if (state == RADIOLIB_ERR_NONE) {
-    Serial.printf("RX t=%lu x=%.3f y=%.3f z=%.3f id=%u\n",
-                  pkt.timestampMs, pkt.accX, pkt.accY, pkt.accZ, pkt.deviceId);
+    Serial.printf("RX t=%lu x=%.3f id=%u\n",
+                  pkt.timestampMs, pkt.accX, pkt.deviceId);
 
     lastTimestampMs = pkt.timestampMs;
     lastDeviceId    = pkt.deviceId;
     lastAccXMps2    = pkt.accX;
-    lastAccYMps2    = pkt.accY;
-    lastAccZMps2    = pkt.accZ;
     lastRssiDbm     = radio.getRSSI();
     lastSnrDb       = radio.getSNR();
     lastPacketAtMs  = millis();

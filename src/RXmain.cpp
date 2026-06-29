@@ -17,6 +17,7 @@ namespace {
 constexpr uint32_t kSerialBaud = 115200;
 constexpr uint32_t kDisplayRefreshMs = 250;
 constexpr uint32_t kPacketStaleMs = 3000;
+constexpr bool kVerbosePacketLogs = false;
 
 constexpr int kOledSda = 17;
 constexpr int kOledScl = 18;
@@ -261,8 +262,10 @@ void handleReceivedPacket() {
   TelemetryPacket pkt;
   const int16_t state = radio.readData(reinterpret_cast<uint8_t*>(&pkt), sizeof(pkt));
   if (state == RADIOLIB_ERR_NONE) {
-    Serial.printf("RX t=%lu x=%.3f id=%u\n",
-                  pkt.timestampMs, pkt.accX, pkt.deviceId);
+    if (kVerbosePacketLogs) {
+      Serial.printf("RX t=%lu x=%.3f id=%u\n",
+                    pkt.timestampMs, pkt.accX, pkt.deviceId);
+    }
 
     lastTimestampMs = pkt.timestampMs;
     lastDeviceId    = pkt.deviceId;
@@ -323,7 +326,6 @@ void setup() {
 void loop() {
   if (receivedFlag) {
     handleReceivedPacket();
-    updateDisplay();
   }
 
   const uint32_t nowMs = millis();

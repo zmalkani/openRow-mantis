@@ -13,8 +13,9 @@ namespace {
 int ID = 0000;
 
 constexpr uint32_t kSerialBaud = 115200;
-constexpr uint32_t kPacketIntervalMs = 20;   // ~17ms airtime at BW500+binary, 3ms margin
+constexpr uint32_t kPacketIntervalMs = 5;    // keep minimal guard; cadence is primarily limited by TX-complete
 constexpr uint32_t kDisplayIntervalMs = 200; // display update decoupled from TX
+constexpr bool kVerbosePacketLogs = false;
 
 // ADXL345 IMU on separate I2C bus (Wire1)
 constexpr int kImuSda = 7;
@@ -271,7 +272,9 @@ void sendTelemetryPacket(uint32_t timestampMs, int ID) {
   pkt.accX = lastAccXMps2;
   pkt.deviceId = static_cast<uint16_t>(ID);
 
-  Serial.printf("TX t=%lu x=%.3f id=%d\n", timestampMs, pkt.accX, pkt.deviceId);
+  if (kVerbosePacketLogs) {
+    Serial.printf("TX t=%lu x=%.3f id=%d\n", timestampMs, pkt.accX, pkt.deviceId);
+  }
 
   const int16_t state = radio.startTransmit(reinterpret_cast<uint8_t*>(&pkt), sizeof(pkt));
   if (state != RADIOLIB_ERR_NONE) {

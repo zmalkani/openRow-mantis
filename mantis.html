@@ -44,12 +44,15 @@
   .metric-card:hover { box-shadow: 0 4px 20px rgba(0,0,0,0.07); }
   .metric-card.acc { border-top-color: #1a5cff; }
   .metric-card.time { border-top-color: #a855f7; }
+  .metric-card.spm { border-top-color: #16a34a; grid-column: 1 / -1; display: flex; align-items: baseline; gap: 28px; flex-wrap: wrap; }
   .metric-label { font-family: var(--mono); font-size: 0.62rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.18em; margin-bottom: 10px; }
   .metric-value { font-family: var(--display); font-weight: 800; font-size: 5rem; line-height: 1; letter-spacing: -0.03em; transition: opacity 0.1s; }
   .metric-value.flash { opacity: 0.4; }
   .metric-unit { font-family: var(--mono); font-size: 0.65rem; color: var(--muted); margin-top: 8px; letter-spacing: 0.08em; }
   .metric-card.acc .metric-value { color: #1a5cff; }
   .metric-card.time .metric-value { color: #a855f7; font-size: 2.2rem; font-weight: 400; }
+  .metric-card.spm .metric-value { color: #16a34a; }
+  .spm-detail { font-family: var(--mono); font-size: 0.68rem; color: var(--muted); display: flex; flex-direction: column; gap: 4px; }
   .plot-panel { grid-column: 1 / -1; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
   .plot-panel-inner { display: grid; grid-template-columns: 1fr; }
   .plot-half { position: relative; }
@@ -168,6 +171,17 @@
     <div class="metric-value" id="valTime">--</div>
     <div class="metric-unit">ms since boot &nbsp;·&nbsp; <span id="hzDisplay">-- Hz</span></div>
   </div>
+  <div class="metric-card spm">
+    <div>
+      <div class="metric-label">Stroke Rate</div>
+      <div class="metric-value" id="valSPM">--</div>
+      <div class="metric-unit">strokes / min</div>
+    </div>
+    <div class="spm-detail">
+      <span>Last stroke: <span id="spmLastStroke">--</span> s ago</span>
+      <span>Detected peaks: <span id="spmPeakCount">--</span> (last 60 s)</span>
+    </div>
+  </div>
   <div class="plot-panel">
     <div class="plot-panel-inner">
       <div class="plot-half">
@@ -209,6 +223,11 @@
   const accData = [];
   let sessionStartMs = null;
   let viewEndTime = null;         // right edge of the view (seconds); null = follow live
+
+  // ---- Stroke rate (SPM) state ----
+  const SPM_LOOKBACK   = 60;   // seconds of history to scan for peaks
+  const SPM_MIN_SEP    = 0.4;  // minimum seconds between two peaks (~150 SPM ceiling)
+  let   spmPeakTimes   = [];   // timestamps (seconds) of detected peaks
 
   const accCanvas = document.getElementById('accChart');
   const accCtx    = accCanvas.getContext('2d');
@@ -291,6 +310,74 @@
     ctx.fillStyle = color; ctx.fill();
     ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke();
     ctx.restore();
+  }
+
+  // ---- Stroke-rate (SPM) peak detection ----
+  function computeStrokeRate() {
+    if (accData.length < 10) return;
+
+    const now    = accData[accData.length - 1].x;
+    const cutoff = now - SPM_LOOKBACK;
+    // Slice the recent window; keep one extra point before cutoff for edge comparison
+    const startIdx = Math.max(0, accData.findIndex(p => p.x >= cutoff) - 1);
+    const win = accData.slice(startIdx);
+    if (win.length < 5) return;
+
+    // Compute mean and std-dev to set an adaptive peak threshold
+    let sum = 0;
+    for (const p of win) sum += p.y;
+    const mean = sum / win.length;
+    let variance = 0;
+    for (const p of win) variance += (p.y - mean) ** 2;
+    const std = Math.sqrt(variance / win.length);
+    const threshold = mean + Math.max(std * 0.8, 0.3); // 0.8 σ above mean; 0.3 m/s² floor guards against near-zero-std noise
+
+    // Find local maxima above threshold, enforcing minimum separation
+    const newPeaks = [];
+    for (let i = 1; i < win.length - 1; i++) {
+      if (win[i].y >= win[i - 1].y &&
+          win[i].y >  win[i + 1].y &&
+          win[i].y >  threshold) {
+        const t = win[i].x;
+        if (newPeaks.length === 0 || t - newPeaks[newPeaks.length - 1] >= SPM_MIN_SEP) {
+          newPeaks.push(t);
+        }
+      }
+    }
+
+    // Keep only peaks within the lookback window
+    spmPeakTimes = newPeaks.filter(t => t >= cutoff);
+
+    const peakCountEl   = document.getElementById('spmPeakCount');
+    const lastStrokeEl  = document.getElementById('spmLastStroke');
+    const valSPMEl      = document.getElementById('valSPM');
+
+    peakCountEl.textContent = spmPeakTimes.length > 0 ? spmPeakTimes.length : '--';
+
+    if (spmPeakTimes.length > 0) {
+      const lastPeak = spmPeakTimes[spmPeakTimes.length - 1];
+      lastStrokeEl.textContent = (now - lastPeak).toFixed(1);
+    } else {
+      lastStrokeEl.textContent = '--';
+    }
+
+    if (spmPeakTimes.length < 2) { valSPMEl.textContent = '--'; return; }
+
+    // Average interval over the last few strokes for a stable reading.
+    // Slice -9 peaks → 8 intervals (N peaks yield N-1 intervals).
+    const recent = spmPeakTimes.slice(-9);
+    let totalInterval = 0;
+    for (let i = 1; i < recent.length; i++) totalInterval += recent[i] - recent[i - 1];
+    const avgInterval = totalInterval / (recent.length - 1);
+    const spm = 60 / avgInterval;
+
+    // Sanity-check: typical competitive rowing is 10–60 SPM; values outside
+    // that range most likely indicate noise peaks rather than real strokes.
+    if (spm >= 10 && spm <= 60) {
+      valSPMEl.textContent = spm.toFixed(1);
+    } else {
+      valSPMEl.textContent = '--';
+    }
   }
 
   function redrawCharts() {
@@ -430,6 +517,7 @@
 
     accData.push({ x: elapsed, y: acc });
     if (accData.length > MAX_POINTS) accData.shift();
+    computeStrokeRate();
     redrawCharts();
 
     // CSV row

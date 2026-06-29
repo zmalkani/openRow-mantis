@@ -247,7 +247,8 @@
   }
 
   function deviceLabel(deviceId) {
-    return deviceId === 'unknown' ? 'Unknown' : `ID ${deviceId}`;
+    if (deviceId === 'unknown') return 'Unknown';
+    return /^id\s+/i.test(deviceId) ? deviceId : `ID ${deviceId}`;
   }
 
   function drawChart(canvas, ctx, timelineData, seriesByDevice) {
@@ -335,11 +336,19 @@
       legend.innerHTML = '<span class="legend-empty">No device data yet</span>';
       return;
     }
-    legend.innerHTML = entries
-      .map(entry =>
-        `<span class="legend-item"><span class="legend-swatch" style="background:${entry.color}"></span>${deviceLabel(entry.deviceId)}: ${entry.latest.toFixed(2)} m/s²</span>`
-      )
-      .join('');
+    legend.textContent = '';
+    for (const entry of entries) {
+      const item = document.createElement('span');
+      item.className = 'legend-item';
+      const swatch = document.createElement('span');
+      swatch.className = 'legend-swatch';
+      swatch.style.background = entry.color;
+      const label = document.createElement('span');
+      label.textContent = `${deviceLabel(entry.deviceId)}: ${entry.latest.toFixed(2)} m/s²`;
+      item.appendChild(swatch);
+      item.appendChild(label);
+      legend.appendChild(item);
+    }
   }
 
   function redrawCharts() {

@@ -72,6 +72,18 @@
   .log-entry { display: flex; gap: 16px; } .log-ts { color: var(--border); min-width: 90px; } .log-data { color: #aaa; }
   .log-entry.new .log-data { color: var(--text); } .log-entry.system .log-data { color: var(--accent); } .log-entry.error .log-data { color: #e63329; }
   .no-ble { display: none; grid-column: 1 / -1; background: #fff5f5; border: 1px solid #fca5a5; border-radius: 6px; padding: 16px 20px; font-family: var(--mono); font-size: 0.78rem; color: #dc2626; line-height: 1.7; }
+  .guide-panel { grid-column: 1 / -1; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+  .guide-header { padding: 10px 18px; border-bottom: 1px solid var(--border); font-family: var(--mono); font-size: 0.62rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.15em; display: flex; justify-content: space-between; align-items: center; background: var(--panel2); }
+  .guide-body { padding: 18px 22px; }
+  .guide-list { list-style: none; counter-reset: guide; display: flex; flex-direction: column; gap: 14px; }
+  .guide-list li { counter-increment: guide; position: relative; padding-left: 38px; font-family: var(--display); font-size: 0.9rem; line-height: 1.55; color: var(--text); }
+  .guide-list li::before { content: counter(guide); position: absolute; left: 0; top: -1px; width: 24px; height: 24px; border-radius: 50%; background: var(--accent); color: #fff; font-family: var(--mono); font-size: 0.72rem; font-weight: 500; display: flex; align-items: center; justify-content: center; }
+  .guide-list li strong { font-weight: 700; }
+  .guide-list li span { color: var(--muted); }
+  .guide-list code { font-family: var(--mono); font-size: 0.82em; background: var(--panel2); border: 1px solid var(--border); border-radius: 3px; padding: 1px 5px; color: var(--text); }
+  .guide-note { margin-top: 16px; padding: 12px 16px; background: var(--panel2); border-left: 3px solid var(--accent); border-radius: 4px; font-family: var(--mono); font-size: 0.72rem; line-height: 1.7; color: var(--muted); }
+  .toggle-btn { background: none; border: 1px solid var(--border); color: var(--muted); font-family: var(--mono); font-size: 0.6rem; padding: 3px 8px; cursor: pointer; text-transform: uppercase; letter-spacing: 0.1em; border-radius: 3px; transition: all 0.18s; }
+  .toggle-btn:hover { border-color: var(--accent); color: var(--accent); }
   footer { padding: 14px 32px; border-top: 1px solid var(--border); font-family: var(--mono); font-size: 0.62rem; color: var(--muted); display: flex; justify-content: space-between; background: var(--panel); }
   .version-link { font-family: var(--mono); font-size: 0.62rem; color: var(--accent); cursor: pointer; text-decoration: underline; }
   @media (max-width: 700px) {
@@ -127,6 +139,24 @@
 <main>
   <div class="no-ble" id="noBleWarning">
     ⚠ Web Bluetooth is not supported in this browser. Please use Chrome on desktop or Android. Safari and Firefox do not support Web Bluetooth.
+  </div>
+  <div class="guide-panel" id="guidePanel">
+    <div class="guide-header">
+      <span>How to use the dashboard</span>
+      <button class="toggle-btn" id="guideToggle" onclick="toggleGuide()">Hide</button>
+    </div>
+    <div class="guide-body" id="guideBody">
+      <ol class="guide-list">
+        <li><strong>Open the dashboard.</strong> <span>This page only works in Chrome on desktop or Android. Web Bluetooth only works in Chromium-based browsers — Safari and Firefox won't connect, and the page will tell you if that's the problem.</span></li>
+        <li><strong>Power on the RX unit</strong> <span>and make sure its OLED shows the receiver is running. The TX unit should be on too, so there's actual data flowing.</span></li>
+        <li><strong>Hit Connect</strong> <span>(top right). A browser pop-up lists nearby Bluetooth devices — pick <code>openRow_RX</code>. The status dot turns green when it's connected.</span></li>
+        <li><strong>Watch the numbers.</strong> <span>The Acceleration card shows the live resultant value, Device Uptime shows how long the TX has been running, and the graph plots acceleration over time as the boat moves.</span></li>
+        <li><strong>Save your data</strong> <span>if you want — the two export buttons up top download the session as a file once you're connected.</span></li>
+      </ol>
+      <div class="guide-note">
+        If the device doesn't show up in the pop-up, double-check the RX unit is powered, the antenna is on, and you're not already connected from another tab. The two UUID fields above (Service UUID and Char UUID) are pre-filled to match the firmware — you only need to touch those if you've changed the UUIDs in <code>RXmain.cpp</code>.
+      </div>
+    </div>
   </div>
   <div class="metric-card acc">
     <div class="metric-label">Acceleration</div>
@@ -491,6 +521,13 @@
     logEl.innerHTML = '';
     packetCount = 0;
     document.getElementById('packetCount').textContent = '0 packets received';
+  }
+  function toggleGuide() {
+    const body = document.getElementById('guideBody');
+    const btn = document.getElementById('guideToggle');
+    const hidden = body.style.display === 'none';
+    body.style.display = hidden ? '' : 'none';
+    btn.textContent = hidden ? 'Hide' : 'Show';
   }
 </script>
 </body>

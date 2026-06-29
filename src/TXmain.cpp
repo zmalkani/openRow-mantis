@@ -13,7 +13,8 @@ namespace {
 int ID = 0000;
 
 constexpr uint32_t kSerialBaud = 115200;
-constexpr uint32_t kPacketIntervalMs = 40;  // ~34ms airtime at BW250+binary, 6ms margin
+constexpr uint32_t kPacketIntervalMs = 20;   // ~17ms airtime at BW500+binary, 3ms margin
+constexpr uint32_t kDisplayIntervalMs = 200; // display update decoupled from TX
 
 // ADXL345 IMU on separate I2C bus (Wire1)
 constexpr int kImuSda = 7;
@@ -41,7 +42,7 @@ constexpr int kLoRaBusy = 13;
 constexpr int kLoRaDio1 = 14;
 
 constexpr float kLoRaFrequencyMhz = 915.0;
-constexpr float kLoRaBandwidthKhz = 250.0;  // 250kHz: ~34ms airtime vs ~55ms at 125kHz
+constexpr float kLoRaBandwidthKhz = 500.0;  // 500kHz: ~17ms airtime
 constexpr uint8_t kLoRaSpreadingFactor = 7;
 constexpr uint8_t kLoRaCodingRate = 5;
 constexpr uint8_t kLoRaSyncWord = 0x12;
@@ -52,12 +53,10 @@ constexpr float kLoRaTcxoVoltage = 1.7;
 SX1262 radio = new Module(kLoRaNss, kLoRaDio1, kLoRaRst, kLoRaBusy);
 Adafruit_SSD1306 display(kOledWidth, kOledHeight, &Wire, kOledRst);
 
-// Binary telemetry packet — 18 bytes vs ~37 bytes ASCII, cuts airtime ~40%
+// Binary telemetry packet — 10 bytes: timestamp + X axis + device ID
 struct __attribute__((packed)) TelemetryPacket {
   uint32_t timestampMs;
   float accX;
-  float accY;
-  float accZ;
   uint16_t deviceId;
 };
 
@@ -68,20 +67,19 @@ constexpr uint8_t kAdxlPowerCtl = 0x2D;
 bool imuReady = false;
 
 uint32_t lastPacketAtMs = 0;
+uint32_t lastDisplayAtMs = 0;
+volatile bool txComplete = true;
 float lastAccXMps2 = 0.0f;
-float lastAccYMps2 = 0.0f;
-float lastAccZMps2 = 0.0f;
 bool radioReady = false;
 bool displayReady = false;
 
 
 
-float readAccelerationMagnitude() {
+float readAccelX() {
   if (!imuReady) {
     return 0.0f;
   }
   
-  // Read 6 bytes starting from DATAX0 (0x32)
   Wire1.beginTransmission(kAdxlAddress);
   Wire1.write(kAdxlDataX0);
   Wire1.endTransmission();
@@ -90,18 +88,17 @@ float readAccelerationMagnitude() {
     return 0.0f;
   }
   
-  // Read acceleration data (16-bit, little-endian)
   int16_t x = Wire1.read() | (Wire1.read() << 8);
-  int16_t y = Wire1.read() | (Wire1.read() << 8);
-  int16_t z = Wire1.read() | (Wire1.read() << 8);
-  
-  // Convert from ADC counts to m/s² (ADXL345 in 16G mode: 3.9mg/LSB = 0.0383 m/s²/LSB)
-  lastAccXMps2 = (x * 0.0383f);
-  lastAccYMps2 = (y * 0.0383f);
-  lastAccZMps2 = (z * 0.0383f) - 9.81f;  // Subtract gravity from Z axis
-  
-  // Return primary rowing axis (X - forward/backward motion in boat)
+  // Read and discard Y, Z to keep the I2C transaction clean
+  Wire1.read(); Wire1.read();
+  Wire1.read(); Wire1.read();
+
+  lastAccXMps2 = x * 0.0383f;
   return lastAccXMps2;
+}
+
+void IRAM_ATTR onTxDone() {
+  txComplete = true;
 }
 
 void printRadioError(int16_t state) {
@@ -128,6 +125,7 @@ bool startRadio() {
   }
 
   radio.setDio2AsRfSwitch(true);
+  radio.setDio1Action(onTxDone);  // ISR fires when TX finishes
   return true;
 }
 
@@ -235,16 +233,11 @@ void updateDisplay(uint32_t timestampMs, float accMps2) {
   display.drawFastHLine(0, 25, kOledWidth, SSD1306_WHITE);
 
   display.setCursor(0, 29);
-  display.print(F("X:"));
+  display.setTextSize(2);
   display.print(lastAccXMps2, 2);
-  display.print(F(" Y:"));
-  display.print(lastAccYMps2, 2);
-
-  display.setCursor(0, 40);
-  display.print(F("Z:"));
-  display.print(lastAccZMps2, 2);
-
   display.setTextSize(1);
+  display.print(F(" m/s2"));
+
   display.drawFastVLine(86, 26, 38, SSD1306_WHITE);
   display.setCursor(92, 34);
   // Heltec V3 enable sequence from Meshtastic Power.cpp:
@@ -272,20 +265,18 @@ void updateDisplay(uint32_t timestampMs, float accMps2) {
   display.display();
 }
 
-void sendTelemetryPacket(uint32_t timestampMs, float accMps2, int ID) {
+void sendTelemetryPacket(uint32_t timestampMs, int ID) {
   TelemetryPacket pkt;
   pkt.timestampMs = timestampMs;
   pkt.accX = lastAccXMps2;
-  pkt.accY = lastAccYMps2;
-  pkt.accZ = lastAccZMps2;
   pkt.deviceId = static_cast<uint16_t>(ID);
 
-  Serial.printf("TX t=%lu x=%.3f y=%.3f z=%.3f id=%d\n",
-                timestampMs, pkt.accX, pkt.accY, pkt.accZ, pkt.deviceId);
+  Serial.printf("TX t=%lu x=%.3f id=%d\n", timestampMs, pkt.accX, pkt.deviceId);
 
-  const int16_t state = radio.transmit(reinterpret_cast<uint8_t*>(&pkt), sizeof(pkt));
+  const int16_t state = radio.startTransmit(reinterpret_cast<uint8_t*>(&pkt), sizeof(pkt));
   if (state != RADIOLIB_ERR_NONE) {
     printRadioError(state);
+    txComplete = true;
   }
 }
 
@@ -326,10 +317,19 @@ void setup() {
 
 void loop() {
   const uint32_t nowMs = millis();
-  if (nowMs - lastPacketAtMs >= kPacketIntervalMs) {
+
+  // Finish previous transmit and arm for next
+  if (txComplete && nowMs - lastPacketAtMs >= kPacketIntervalMs) {
+    radio.finishTransmit();
+    txComplete = false;
     lastPacketAtMs = nowMs;
-    readAccelerationMagnitude();
-    sendTelemetryPacket(nowMs, 0, ID);
+    readAccelX();
+    sendTelemetryPacket(nowMs, ID);
+  }
+
+  // Display update on its own slower timer — decoupled from TX
+  if (nowMs - lastDisplayAtMs >= kDisplayIntervalMs) {
+    lastDisplayAtMs = nowMs;
     updateDisplay(nowMs, 0);
   }
 }

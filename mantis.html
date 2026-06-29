@@ -63,6 +63,10 @@
   .live-btn.active { border-color: #1a5cff; color: #fff; background: #1a5cff; }
   canvas.chart { display: block; width: 100%; height: 160px; cursor: grab; touch-action: pan-y; }
   canvas.chart.grabbing { cursor: grabbing; }
+  .plot-legend { padding: 8px 18px 10px; border-top: 1px solid var(--border); display: flex; gap: 8px 14px; align-items: center; flex-wrap: wrap; background: #fff; min-height: 34px; }
+  .legend-item { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 0.62rem; color: var(--muted); }
+  .legend-swatch { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .legend-empty { font-family: var(--mono); font-size: 0.62rem; color: var(--muted); }
   .log-panel { grid-column: 1 / -1; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
   .log-header { padding: 10px 18px; border-bottom: 1px solid var(--border); font-family: var(--mono); font-size: 0.62rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.15em; display: flex; justify-content: space-between; align-items: center; background: var(--panel2); }
   .clear-btn { background: none; border: 1px solid var(--border); color: var(--muted); font-family: var(--mono); font-size: 0.6rem; padding: 3px 8px; cursor: pointer; text-transform: uppercase; letter-spacing: 0.1em; border-radius: 3px; transition: all 0.18s; }
@@ -179,6 +183,9 @@
           </div>
         </div>
         <canvas class="chart" id="accChart"></canvas>
+        <div class="plot-legend" id="plotLegend">
+          <span class="legend-empty">No device data yet</span>
+        </div>
       </div>
     </div>
   </div>
@@ -202,11 +209,14 @@
   let hzSamples = [];
   const csvRows = [];
   const txtRows = [];
-  const CSV_HEADER = 'wall_time,device_uptime_ms,acceleration_ms2';
+  const CSV_HEADER = 'wall_time,device_uptime_ms,acceleration_ms2,device_id';
   const MAX_POINTS = 30000;       // retain a long history so it can be scrolled
   const WINDOW_SEC = 30;          // visible time span of the chart
   const CHART_PAD = { top: 12, right: 12, bottom: 26, left: 48 }; // px padding inside the chart
   const accData = [];
+  const accSeriesByDevice = new Map();
+  const deviceColors = new Map();
+  const DEVICE_COLORS = ['#1a5cff', '#a855f7', '#16a34a', '#f97316', '#ec4899', '#14b8a6', '#eab308', '#ef4444'];
   let sessionStartMs = null;
   let viewEndTime = null;         // right edge of the view (seconds); null = follow live
 
@@ -223,7 +233,25 @@
     }
   }
 
-  function drawChart(canvas, ctx, data, color) {
+  function getDeviceSeries(deviceId) {
+    if (!accSeriesByDevice.has(deviceId)) accSeriesByDevice.set(deviceId, []);
+    return accSeriesByDevice.get(deviceId);
+  }
+
+  function getDeviceColor(deviceId) {
+    if (!deviceColors.has(deviceId)) {
+      const idx = deviceColors.size % DEVICE_COLORS.length;
+      deviceColors.set(deviceId, DEVICE_COLORS[idx]);
+    }
+    return deviceColors.get(deviceId);
+  }
+
+  function deviceLabel(deviceId) {
+    if (deviceId === 'unknown') return 'Unknown';
+    return /^id\s+/i.test(deviceId) ? deviceId : `ID ${deviceId}`;
+  }
+
+  function drawChart(canvas, ctx, timelineData, seriesByDevice) {
     sizeCanvas(canvas);
     const W = canvas.getBoundingClientRect().width;
     const H = canvas.getBoundingClientRect().height;
@@ -233,7 +261,7 @@
     const plotH = H - PAD.top  - PAD.bottom;
     ctx.fillStyle = '#f4f6f9';
     ctx.fillRect(0, 0, W, H);
-    if (data.length < 2) {
+    if (timelineData.length < 2) {
       ctx.font = "11px 'DM Mono', monospace";
       ctx.fillStyle = '#c0c8d8';
       ctx.textAlign = 'center';
@@ -242,13 +270,18 @@
       return;
     }
     let yMin = Infinity, yMax = -Infinity;
-    const dataXMax = data[data.length - 1].x;
-    const dataXMin = data[0].x;
+    const dataXMax = timelineData[timelineData.length - 1].x;
+    const dataXMin = timelineData[0].x;
     let xMax = (viewEndTime === null) ? dataXMax : viewEndTime;
     const xMin = Math.max(dataXMin, xMax - WINDOW_SEC);
     const xRange = xMax - xMin || 1;
-    const inWindow = data.filter(p => p.x >= xMin - 0.5 && p.x <= xMax + 0.5);
-    for (const p of inWindow) { if (p.y < yMin) yMin = p.y; if (p.y > yMax) yMax = p.y; }
+    const visibleByDevice = [];
+    for (const [deviceId, series] of seriesByDevice.entries()) {
+      const visible = series.filter(p => p.x >= xMin - 0.5 && p.x <= xMax + 0.5);
+      if (!visible.length) continue;
+      visibleByDevice.push([deviceId, visible]);
+      for (const p of visible) { if (p.y < yMin) yMin = p.y; if (p.y > yMax) yMax = p.y; }
+    }
     if (!isFinite(yMin) || !isFinite(yMax)) { yMin = -1; yMax = 1; }
     const yPad = (yMax - yMin) * 0.15 || 1;
     yMin -= yPad; yMax += yPad;
@@ -271,30 +304,56 @@
     }
     ctx.save();
     ctx.beginPath(); ctx.rect(PAD.left, PAD.top, plotW, plotH); ctx.clip();
-    const visible = inWindow;
-    if (visible.length < 1) { ctx.restore(); return; }
-    ctx.beginPath();
-    ctx.moveTo(px(visible[0].x), py(visible[0].y));
-    for (let i = 1; i < visible.length; i++) ctx.lineTo(px(visible[i].x), py(visible[i].y));
-    ctx.lineTo(px(visible[visible.length-1].x), PAD.top + plotH);
-    ctx.lineTo(px(visible[0].x), PAD.top + plotH);
-    ctx.closePath();
-    const grad = ctx.createLinearGradient(0, PAD.top, 0, PAD.top + plotH);
-    grad.addColorStop(0, color + '28'); grad.addColorStop(1, color + '00');
-    ctx.fillStyle = grad; ctx.fill();
-    ctx.beginPath();
-    ctx.moveTo(px(visible[0].x), py(visible[0].y));
-    for (let i = 1; i < visible.length; i++) ctx.lineTo(px(visible[i].x), py(visible[i].y));
-    ctx.strokeStyle = color; ctx.lineWidth = 1.8; ctx.lineJoin = 'round'; ctx.lineCap = 'round'; ctx.stroke();
-    const last = visible[visible.length - 1];
-    ctx.beginPath(); ctx.arc(px(last.x), py(last.y), 4, 0, Math.PI * 2);
-    ctx.fillStyle = color; ctx.fill();
-    ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke();
+    if (visibleByDevice.length < 1) { ctx.restore(); return; }
+    for (const [deviceId, visible] of visibleByDevice) {
+      const color = getDeviceColor(deviceId);
+      ctx.beginPath();
+      ctx.moveTo(px(visible[0].x), py(visible[0].y));
+      for (let i = 1; i < visible.length; i++) ctx.lineTo(px(visible[i].x), py(visible[i].y));
+      ctx.strokeStyle = color; ctx.lineWidth = 1.8; ctx.lineJoin = 'round'; ctx.lineCap = 'round'; ctx.stroke();
+      const last = visible[visible.length - 1];
+      ctx.beginPath(); ctx.arc(px(last.x), py(last.y), 3.5, 0, Math.PI * 2);
+      ctx.fillStyle = color; ctx.fill();
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.2; ctx.stroke();
+    }
     ctx.restore();
   }
 
+  function updateLegend() {
+    const legend = document.getElementById('plotLegend');
+    if (!legend) return;
+    const entries = [];
+    for (const [deviceId, series] of accSeriesByDevice.entries()) {
+      if (!series.length) continue;
+      entries.push({
+        deviceId,
+        color: getDeviceColor(deviceId),
+        latest: series[series.length - 1].y
+      });
+    }
+    entries.sort((a, b) => a.deviceId.localeCompare(b.deviceId, undefined, { numeric: true, sensitivity: 'base' }));
+    if (!entries.length) {
+      legend.innerHTML = '<span class="legend-empty">No device data yet</span>';
+      return;
+    }
+    legend.textContent = '';
+    for (const entry of entries) {
+      const item = document.createElement('span');
+      item.className = 'legend-item';
+      const swatch = document.createElement('span');
+      swatch.className = 'legend-swatch';
+      swatch.style.background = entry.color;
+      const label = document.createElement('span');
+      label.textContent = `${deviceLabel(entry.deviceId)}: ${entry.latest.toFixed(2)} m/s²`;
+      item.appendChild(swatch);
+      item.appendChild(label);
+      legend.appendChild(item);
+    }
+  }
+
   function redrawCharts() {
-    drawChart(accCanvas, accCtx, accData, '#1a5cff');
+    drawChart(accCanvas, accCtx, accData, accSeriesByDevice);
+    updateLegend();
     updateLiveBtn();
   }
 
@@ -419,10 +478,16 @@
 
     const ts  = parts[0].trim();
     const acc = parseFloat(parts[1]);
+    if (!isFinite(acc)) {
+      logEntry('error', `Invalid acceleration packet: ${raw.trim()}`);
+      return;
+    }
+    const parsedDeviceId = (parts[2] || '').trim();
+    const deviceId = parsedDeviceId || 'unknown';
 
     flashUpdate('valAcc', acc.toFixed(2));
     document.getElementById('valTime').textContent    = parseInt(ts).toLocaleString();
-    document.getElementById('accCurrent').textContent = acc.toFixed(2) + ' m/s²';
+    document.getElementById('accCurrent').textContent = `${deviceLabel(deviceId)} · ${acc.toFixed(2)} m/s²`;
 
     const now = Date.now();
     if (sessionStartMs === null) sessionStartMs = now;
@@ -430,11 +495,14 @@
 
     accData.push({ x: elapsed, y: acc });
     if (accData.length > MAX_POINTS) accData.shift();
+    const series = getDeviceSeries(deviceId);
+    series.push({ x: elapsed, y: acc });
+    if (series.length > MAX_POINTS) series.shift();
     redrawCharts();
 
     // CSV row
     const wallTime = new Date().toISOString();
-    csvRows.push(`${wallTime},${ts},${acc.toFixed(2)}`);
+    csvRows.push(`${wallTime},${ts},${acc.toFixed(2)},${deviceId}`);
 
     // TXT row
     txtRows.push(`${ts}\n${acc.toFixed(2)}`);

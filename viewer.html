@@ -184,7 +184,7 @@
   let seriesLabels = new Map();    // seriesId -> legend label
   let deviceColors = new Map();
   let xAxisMode = 'seconds';  // 'seconds' | 'samples'
-  const SEGMENT_GAP_SEC = 0.2;
+  const SEGMENT_GAP_SEC = 0.2; // Small visual bridge between reset-detected segments on the continuous timeline.
 
   // ---- View state ----
   let viewWindowSec = 30;    // visible time span in seconds
@@ -224,7 +224,7 @@
 
     windowInput.min = seconds ? '0.5' : '1';
     windowInput.step = seconds ? '0.1' : '1';
-    windowInput.max = seconds ? '9999999999' : String(Math.max(sourceData.length, 1));
+    windowInput.max = seconds ? '9999999999' : String(Math.max(sourceData.length - 1, 1));
     windowInput.title = seconds ? 'Visible time window (seconds)' : 'Visible sample window';
     windowInput.setAttribute('aria-label', seconds ? 'Visible time window in seconds' : 'Visible sample window');
   }

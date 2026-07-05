@@ -129,9 +129,13 @@
         <span>Acceleration / Time</span>
       </div>
       <div class="plot-header-right">
+        <span class="ctrl-label">X:</span>
+        <button class="ctrl-btn active" id="xSecondsBtn" aria-label="Use seconds for X axis">Seconds</button>
+        <button class="ctrl-btn" id="xSamplesBtn" aria-label="Use samples for X axis">Samples</button>
+        <div class="ctrl-sep"></div>
         <label for="windowInput" class="ctrl-label">Window:</label>
         <input class="ctrl-input" id="windowInput" type="number" min="0.5" max="9999999999" step="1" value="30" title="Visible time window (seconds)" aria-label="Visible time window in seconds" style="width:130px;">
-        <span class="ctrl-label" aria-hidden="true">s</span>
+        <span class="ctrl-label" id="windowUnitLabel" aria-hidden="true">s</span>
         <div class="ctrl-sep"></div>
         <button class="ctrl-btn" id="panLeftBtn" title="Scroll earlier" aria-label="Pan left, scroll to earlier data">&#9664;</button>
         <button class="ctrl-btn" id="panRightBtn" title="Scroll later" aria-label="Pan right, scroll to later data">&#9654;</button>
@@ -174,9 +178,13 @@
   const DEVICE_COLORS = ['#1a5cff', '#a855f7', '#16a34a', '#f97316', '#ec4899', '#14b8a6', '#eab308', '#ef4444'];
 
   // ---- Data state ----
-  let allData = [];           // [{x (seconds from start), y (m/s²), deviceId}]
-  let seriesByDevice = new Map();  // deviceId -> [{x, y}]
+  let sourceData = [];        // [{xSeconds, xSamples, y, seriesId}]
+  let allData = [];           // [{x (selected axis units), y, seriesId}]
+  let seriesByDevice = new Map();  // seriesId -> [{x, y}]
+  let seriesLabels = new Map();    // seriesId -> legend label
   let deviceColors = new Map();
+  let xAxisMode = 'seconds';  // 'seconds' | 'samples'
+  const SEGMENT_GAP_SEC = 0.2;
 
   // ---- View state ----
   let viewWindowSec = 30;    // visible time span in seconds
@@ -201,6 +209,48 @@
     if (deviceId === 'default') return 'Device';
     if (deviceId === 'unknown') return 'Unknown';
     return /^id\s+/i.test(deviceId) ? deviceId : `ID ${deviceId}`;
+  }
+
+  function updateXAxisControls() {
+    const secondsBtn = document.getElementById('xSecondsBtn');
+    const samplesBtn = document.getElementById('xSamplesBtn');
+    const unitLabel = document.getElementById('windowUnitLabel');
+    const windowInput = document.getElementById('windowInput');
+    const seconds = xAxisMode === 'seconds';
+
+    secondsBtn.classList.toggle('active', seconds);
+    samplesBtn.classList.toggle('active', !seconds);
+    unitLabel.textContent = seconds ? 's' : '#';
+
+    windowInput.min = seconds ? '0.5' : '1';
+    windowInput.step = seconds ? '0.1' : '1';
+    windowInput.max = seconds ? '9999999999' : String(Math.max(sourceData.length, 1));
+    windowInput.title = seconds ? 'Visible time window (seconds)' : 'Visible sample window';
+    windowInput.setAttribute('aria-label', seconds ? 'Visible time window in seconds' : 'Visible sample window');
+  }
+
+  function rebuildMappedData() {
+    const useSeconds = xAxisMode === 'seconds';
+    allData = sourceData.map(p => ({
+      x: useSeconds ? p.xSeconds : p.xSamples,
+      y: p.y,
+      seriesId: p.seriesId
+    }));
+
+    seriesByDevice = new Map();
+    for (const p of allData) {
+      if (!seriesByDevice.has(p.seriesId)) seriesByDevice.set(p.seriesId, []);
+      seriesByDevice.get(p.seriesId).push({ x: p.x, y: p.y });
+    }
+  }
+
+  function setXAxisMode(mode) {
+    if (mode !== 'seconds' && mode !== 'samples') return;
+    if (xAxisMode === mode) return;
+    xAxisMode = mode;
+    updateXAxisControls();
+    rebuildMappedData();
+    fitAll();
   }
 
   function sizeCanvas(canvas) {
@@ -246,8 +296,9 @@
     // Collect visible points per device
     const visibleByDevice = [];
     let yDataMin = Infinity, yDataMax = -Infinity;
+    const xPad = xAxisMode === 'seconds' ? 0.5 : 1;
     for (const [deviceId, series] of seriesByDevice.entries()) {
-      const visible = series.filter(p => p.x >= xMin - 0.5 && p.x <= xMax + 0.5);
+      const visible = series.filter(p => p.x >= xMin - xPad && p.x <= xMax + xPad);
       if (!visible.length) continue;
       visibleByDevice.push([deviceId, visible]);
       for (const p of visible) {
@@ -286,11 +337,13 @@
     }
 
     // X labels — adjust decimal precision to avoid garbled labels at large scales
-    const xDecPlaces = xRange >= 100 ? 0 : xRange >= 10 ? 1 : 2;
+    const isSecondsAxis = xAxisMode === 'seconds';
+    const xDecPlaces = isSecondsAxis ? (xRange >= 100 ? 0 : xRange >= 10 ? 1 : 2) : 0;
     accCtx.textAlign = 'center'; accCtx.textBaseline = 'top'; accCtx.fillStyle = '#8a93a8';
     for (let i = 0; i <= 5; i++) {
       const xVal = xMin + xRange * (i / 5);
-      accCtx.fillText(xVal.toFixed(xDecPlaces) + 's', px(xVal), PAD.top + plotH + 6);
+      const label = isSecondsAxis ? `${xVal.toFixed(xDecPlaces)}s` : `${Math.round(xVal)}`;
+      accCtx.fillText(label, px(xVal), PAD.top + plotH + 6);
     }
 
     // Clip plot area and draw series
@@ -316,9 +369,12 @@
     const entries = [];
     for (const [deviceId, series] of seriesByDevice.entries()) {
       if (!series.length) continue;
-      entries.push({ deviceId, color: getDeviceColor(deviceId) });
+      entries.push({
+        deviceId,
+        label: seriesLabels.get(deviceId) || deviceLabel(deviceId),
+        color: getDeviceColor(deviceId)
+      });
     }
-    entries.sort((a, b) => a.deviceId.localeCompare(b.deviceId, undefined, { numeric: true, sensitivity: 'base' }));
     if (!entries.length) {
       legend.innerHTML = '<span class="legend-empty">No data</span>';
       return;
@@ -331,7 +387,7 @@
       swatch.className = 'legend-swatch';
       swatch.style.background = entry.color;
       const label = document.createElement('span');
-      label.textContent = deviceLabel(entry.deviceId);
+      label.textContent = entry.label;
       item.appendChild(swatch);
       item.appendChild(label);
       legend.appendChild(item);
@@ -420,6 +476,7 @@
 
   // ---- X-axis zoom / pan helpers ----
   function formatWindow(sec) {
+    if (xAxisMode === 'samples') return Math.max(1, Math.round(sec)).toString();
     if (sec >= 100) return sec.toFixed(0);
     if (sec >= 10)  return sec.toFixed(1);
     return sec.toFixed(2);
@@ -428,8 +485,9 @@
   function zoomX(factor) {
     if (allData.length < 2) return;
     const totalDuration = Math.max(allData[allData.length - 1].x - allData[0].x, 1);
-    const MIN_WINDOW = 0.5;
+    const MIN_WINDOW = xAxisMode === 'seconds' ? 0.5 : 1;
     viewWindowSec = Math.max(MIN_WINDOW, Math.min(totalDuration, viewWindowSec * factor));
+    if (xAxisMode === 'samples') viewWindowSec = Math.round(viewWindowSec);
     document.getElementById('windowInput').value = formatWindow(viewWindowSec);
     clampView();
     redraw();
@@ -444,6 +502,8 @@
   }
 
   // Control event listeners
+  document.getElementById('xSecondsBtn').addEventListener('click', () => setXAxisMode('seconds'));
+  document.getElementById('xSamplesBtn').addEventListener('click', () => setXAxisMode('samples'));
   document.getElementById('fitBtn').addEventListener('click', fitAll);
   document.getElementById('panLeftBtn').addEventListener('click', () => panView(-1));
   document.getElementById('panRightBtn').addEventListener('click', () => panView(1));
@@ -455,8 +515,9 @@
   document.getElementById('windowInput').addEventListener('change', () => {
     const val = parseFloat(document.getElementById('windowInput').value);
     if (isFinite(val) && val > 0) {
-      viewWindowSec = val;
+      viewWindowSec = xAxisMode === 'samples' ? Math.round(val) : val;
       clampView();
+      document.getElementById('windowInput').value = formatWindow(viewWindowSec);
       redraw();
     }
   });
@@ -557,6 +618,83 @@
     reader.readAsText(file);
   }
 
+  function buildSegmentedSourceData(points) {
+    const rows = [];
+    const deviceState = new Map();
+    const deviceSegmentCounts = new Map();
+    const segmentGlobalOrder = new Map();
+    let globalSegmentCounter = 0;
+
+    for (const point of points) {
+      const deviceId = (point.deviceId || 'unknown').trim() || 'unknown';
+      let state = deviceState.get(deviceId);
+      if (!state) {
+        state = { lastUptimeMs: null, segmentIndex: 0 };
+        deviceState.set(deviceId, state);
+      }
+
+      const reset = state.lastUptimeMs !== null && point.uptimeMs < state.lastUptimeMs;
+      if (state.lastUptimeMs === null || reset) state.segmentIndex += 1;
+
+      const seriesId = `${deviceId}::seg${state.segmentIndex}`;
+      if (!segmentGlobalOrder.has(seriesId)) segmentGlobalOrder.set(seriesId, ++globalSegmentCounter);
+      if (!deviceSegmentCounts.has(deviceId) || deviceSegmentCounts.get(deviceId) < state.segmentIndex) {
+        deviceSegmentCounts.set(deviceId, state.segmentIndex);
+      }
+
+      rows.push({
+        uptimeMs: point.uptimeMs,
+        y: point.y,
+        deviceId,
+        segmentIndex: state.segmentIndex,
+        seriesId
+      });
+      state.lastUptimeMs = point.uptimeMs;
+    }
+
+    const hasNamedDevice = rows.some(r => r.deviceId !== 'default' && r.deviceId !== 'unknown');
+    const labels = new Map();
+    for (const row of rows) {
+      if (labels.has(row.seriesId)) continue;
+      if (!hasNamedDevice) {
+        labels.set(row.seriesId, `Segment ${segmentGlobalOrder.get(row.seriesId)}`);
+      } else {
+        const base = deviceLabel(row.deviceId);
+        const segCount = deviceSegmentCounts.get(row.deviceId) || 1;
+        labels.set(row.seriesId, segCount > 1 ? `${base} · Seg ${row.segmentIndex}` : base);
+      }
+    }
+
+    const segmented = [];
+    const lastUptimeBySeries = new Map();
+    let runningSec = 0;
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      if (i > 0) {
+        const prevUptime = lastUptimeBySeries.get(row.seriesId);
+        let advanceSec = 0;
+        if (prevUptime === undefined) {
+          advanceSec = SEGMENT_GAP_SEC;
+        } else {
+          const deltaMs = row.uptimeMs - prevUptime;
+          advanceSec = isFinite(deltaMs) && deltaMs > 0 ? deltaMs / 1000 : 0;
+        }
+        if (!isFinite(advanceSec) || advanceSec < 0) advanceSec = 0;
+        runningSec += advanceSec;
+      }
+
+      segmented.push({
+        xSeconds: runningSec,
+        xSamples: i,
+        y: row.y,
+        seriesId: row.seriesId
+      });
+      lastUptimeBySeries.set(row.seriesId, row.uptimeMs);
+    }
+
+    return { data: segmented, labels };
+  }
+
   function parseFileContent(filename, content) {
     let points;
     const lower = filename.toLowerCase();
@@ -575,47 +713,35 @@
       return;
     }
 
-    // Sort by uptime then convert to seconds from start (creates new objects, preserving originals)
-    points.sort((a, b) => a.x - b.x);
-    const t0 = points[0].x;
-    const converted = points.map(p => ({ x: (p.x - t0) / 1000, y: p.y, deviceId: p.deviceId }));
-
-    // Build state from converted points
-    allData = converted;
-    seriesByDevice = new Map();
+    const built = buildSegmentedSourceData(points);
+    sourceData = built.data;
+    seriesLabels = built.labels;
     deviceColors = new Map();
-    for (const p of converted) {
-      if (!seriesByDevice.has(p.deviceId)) seriesByDevice.set(p.deviceId, []);
-      seriesByDevice.get(p.deviceId).push({ x: p.x, y: p.y });
-    }
+    updateXAxisControls();
+    rebuildMappedData();
 
     // Update config bar
     document.getElementById('fileNameLabel').textContent = filename;
     document.getElementById('footerInfo').textContent =
-      `${converted.length.toLocaleString()} points · ${seriesByDevice.size} device${seriesByDevice.size !== 1 ? 's' : ''}`;
+      `${sourceData.length.toLocaleString()} points · ${seriesByDevice.size} series`;
 
     // Show success message
-    const timeSpan = allData[allData.length - 1].x.toFixed(1);
-    const devList = [...seriesByDevice.keys()].map(deviceLabel).join(', ');
+    const timeSpan = sourceData[sourceData.length - 1].xSeconds.toFixed(1);
+    const seriesList = [...seriesByDevice.keys()].map(id => seriesLabels.get(id) || id).join(', ');
     showMessage('success',
       `&#10003; Loaded <strong>${escHtml(filename)}</strong> &#8212; ` +
-      `${converted.length.toLocaleString()} points &middot; ` +
-      `${seriesByDevice.size} device${seriesByDevice.size !== 1 ? 's' : ''} (${escHtml(devList)}) &middot; ` +
+      `${sourceData.length.toLocaleString()} points &middot; ` +
+      `${seriesByDevice.size} series (${escHtml(seriesList)}) &middot; ` +
       `${timeSpan}s span`
     );
 
-    // Show plot panel and set initial view to a readable slice (≤30 s)
+    // Show plot panel and fit to full loaded extent
     document.getElementById('plotPanel').style.display = '';
     yAuto = true;
     document.getElementById('yAutoBtn').classList.add('active');
     document.getElementById('yMinInput').disabled = true;
     document.getElementById('yMaxInput').disabled = true;
-    viewEndTime = null;
-    const totalDuration = Math.max(allData[allData.length - 1].x - allData[0].x, 1);
-    viewWindowSec = Math.min(totalDuration, 30);
-    document.getElementById('windowInput').value = formatWindow(viewWindowSec);
-
-    redraw();
+    fitAll();
   }
 
   // CSV: wall_time,device_uptime_ms,acceleration_ms2,device_id
@@ -632,21 +758,21 @@
       const parts = row.split(',');
       if (parts.length < 3) continue;
 
-      let uptime, acc, deviceId;
+      let uptimeMs, acc, deviceId;
       if (parts.length >= 4) {
         // Standard format: wall_time,device_uptime_ms,acceleration_ms2,device_id
-        uptime   = parseFloat(parts[1]);
-        acc      = parseFloat(parts[2]);
+        uptimeMs = parseFloat(parts[1]);
+        acc = parseFloat(parts[2]);
         deviceId = (parts[3] || '').trim() || 'unknown';
       } else {
         // Fallback: try first two numeric columns
-        uptime   = parseFloat(parts[0]);
-        acc      = parseFloat(parts[1]);
+        uptimeMs = parseFloat(parts[0]);
+        acc = parseFloat(parts[1]);
         deviceId = 'unknown';
       }
 
-      if (!isFinite(uptime) || !isFinite(acc)) continue;
-      points.push({ x: uptime, y: acc, deviceId });
+      if (!isFinite(uptimeMs) || !isFinite(acc)) continue;
+      points.push({ uptimeMs, y: acc, deviceId });
     }
     return points;
   }
@@ -656,10 +782,10 @@
     const lines = content.split('\n').map(l => l.trim()).filter(l => l.length > 0);
     const points = [];
     for (let i = 0; i + 1 < lines.length; i += 2) {
-      const uptime = parseFloat(lines[i]);
-      const acc    = parseFloat(lines[i + 1]);
-      if (!isFinite(uptime) || !isFinite(acc)) continue;
-      points.push({ x: uptime, y: acc, deviceId: 'default' });
+      const uptimeMs = parseFloat(lines[i]);
+      const acc = parseFloat(lines[i + 1]);
+      if (!isFinite(uptimeMs) || !isFinite(acc)) continue;
+      points.push({ uptimeMs, y: acc, deviceId: 'default' });
     }
     return points;
   }
@@ -678,6 +804,8 @@
     showMessage('error', `&#9888; ${escHtml(msg)}`);
     document.getElementById('plotPanel').style.display = 'none';
   }
+
+  updateXAxisControls();
 </script>
 
 </body>

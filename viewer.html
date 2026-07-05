@@ -57,6 +57,7 @@
   .ctrl-label { font-family: var(--mono); font-size: 0.6rem; color: var(--muted); white-space: nowrap; text-transform: uppercase; letter-spacing: 0.1em; }
   canvas.chart { display: block; width: 100%; height: 240px; cursor: grab; touch-action: pan-y; }
   canvas.chart.grabbing { cursor: grabbing; }
+  canvas.chart:focus { outline: 2px solid var(--accent); outline-offset: -2px; }
   .plot-legend { padding: 8px 18px 10px; border-top: 1px solid var(--border); display: flex; gap: 8px 14px; align-items: center; flex-wrap: wrap; background: #fff; min-height: 34px; }
   .legend-item { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 0.62rem; color: var(--muted); }
   .legend-swatch { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
@@ -129,7 +130,7 @@
       </div>
       <div class="plot-header-right">
         <label for="windowInput" class="ctrl-label">Window:</label>
-        <input class="ctrl-input" id="windowInput" type="number" min="0.5" max="99999" step="1" value="30" title="Visible time window (seconds)" aria-label="Visible time window in seconds" style="width:54px;">
+        <input class="ctrl-input" id="windowInput" type="number" min="0.5" max="9999999999" step="1" value="30" title="Visible time window (seconds)" aria-label="Visible time window in seconds" style="width:130px;">
         <span class="ctrl-label" aria-hidden="true">s</span>
         <div class="ctrl-sep"></div>
         <button class="ctrl-btn" id="panLeftBtn" title="Scroll earlier" aria-label="Pan left, scroll to earlier data">&#9664;</button>
@@ -154,7 +155,7 @@
       <button class="ctrl-btn" id="resetBtn">Reset View</button>
     </div>
 
-    <canvas class="chart" id="accChart"></canvas>
+    <canvas class="chart" id="accChart" tabindex="0"></canvas>
 
     <div class="plot-legend" id="plotLegend">
       <span class="legend-empty">No data</span>
@@ -284,11 +285,12 @@
       accCtx.fillText(yVal.toFixed(1), PAD.left - 6, y);
     }
 
-    // X labels
+    // X labels — adjust decimal precision to avoid garbled labels at large scales
+    const xDecPlaces = xRange >= 100 ? 0 : xRange >= 10 ? 1 : 2;
     accCtx.textAlign = 'center'; accCtx.textBaseline = 'top'; accCtx.fillStyle = '#8a93a8';
     for (let i = 0; i <= 5; i++) {
       const xVal = xMin + xRange * (i / 5);
-      accCtx.fillText(xVal.toFixed(1) + 's', px(xVal), PAD.top + plotH + 6);
+      accCtx.fillText(xVal.toFixed(xDecPlaces) + 's', px(xVal), PAD.top + plotH + 6);
     }
 
     // Clip plot area and draw series
@@ -358,16 +360,12 @@
     if (allData.length < 2) return;
     viewEndTime = null;
     viewWindowSec = Math.max(allData[allData.length - 1].x - allData[0].x, 1);
-    document.getElementById('windowInput').value = viewWindowSec.toFixed(1);
+    document.getElementById('windowInput').value = formatWindow(viewWindowSec);
     redraw();
   }
 
   function panView(direction) {
-    if (allData.length < 2) return;
-    const base = viewEndTime !== null ? viewEndTime : allData[allData.length - 1].x;
-    viewEndTime = base + direction * viewWindowSec * 0.2;
-    clampView();
-    redraw();
+    panX(direction * 0.2);
   }
 
   function resetView() {
@@ -420,6 +418,31 @@
     redraw();
   }
 
+  // ---- X-axis zoom / pan helpers ----
+  function formatWindow(sec) {
+    if (sec >= 100) return sec.toFixed(0);
+    if (sec >= 10)  return sec.toFixed(1);
+    return sec.toFixed(2);
+  }
+
+  function zoomX(factor) {
+    if (allData.length < 2) return;
+    const totalDuration = Math.max(allData[allData.length - 1].x - allData[0].x, 1);
+    const MIN_WINDOW = 0.5;
+    viewWindowSec = Math.max(MIN_WINDOW, Math.min(totalDuration, viewWindowSec * factor));
+    document.getElementById('windowInput').value = formatWindow(viewWindowSec);
+    clampView();
+    redraw();
+  }
+
+  function panX(fraction) {
+    if (allData.length < 2) return;
+    const base = viewEndTime !== null ? viewEndTime : allData[allData.length - 1].x;
+    viewEndTime = base + fraction * viewWindowSec;
+    clampView();
+    redraw();
+  }
+
   // Control event listeners
   document.getElementById('fitBtn').addEventListener('click', fitAll);
   document.getElementById('panLeftBtn').addEventListener('click', () => panView(-1));
@@ -448,14 +471,21 @@
     if (isFinite(val)) { yManualMax = val; redraw(); }
   });
 
-  // ---- Pan interactions (wheel + drag, adapted from mantis.html) ----
+  // ---- Pan/zoom interactions (wheel + drag + keyboard) ----
   accCanvas.addEventListener('wheel', e => {
     if (allData.length < 2) return;
     e.preventDefault();
-    const base = viewEndTime !== null ? viewEndTime : allData[allData.length - 1].x;
-    viewEndTime = base - Math.sign(e.deltaY) * viewWindowSec * 0.2;
-    clampView();
-    redraw();
+    // Distinguish horizontal pan vs vertical zoom by dominant axis (or Shift held)
+    const horizontal = e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY);
+    if (horizontal) {
+      // Horizontal scroll → pan left/right; positive delta = scroll right = view moves forward
+      const delta = e.deltaX !== 0 ? e.deltaX : e.deltaY;
+      panX(Math.sign(delta) * 0.15);
+    } else {
+      // Vertical scroll → zoom: up (negative deltaY) = zoom in (smaller window)
+      const factor = e.deltaY > 0 ? 1.2 : (1 / 1.2);
+      zoomX(factor);
+    }
   }, { passive: false });
 
   let isDragging = false, dragStartX = 0, dragStartEnd = 0;
@@ -483,6 +513,17 @@
   }
   accCanvas.addEventListener('pointerup', endDrag);
   accCanvas.addEventListener('pointercancel', endDrag);
+
+  // Arrow-key zoom / pan (requires chart to be focused)
+  accCanvas.addEventListener('keydown', e => {
+    if (allData.length < 2) return;
+    switch (e.key) {
+      case 'ArrowUp':    e.preventDefault(); zoomX(1 / 1.2); break;
+      case 'ArrowDown':  e.preventDefault(); zoomX(1.2);     break;
+      case 'ArrowLeft':  e.preventDefault(); panX(-0.2);     break;
+      case 'ArrowRight': e.preventDefault(); panX(0.2);      break;
+    }
+  });
 
   // ---- File import ----
   const fileInput = document.getElementById('fileInput');
@@ -563,15 +604,16 @@
       `${timeSpan}s span`
     );
 
-    // Show plot panel and fit view
+    // Show plot panel and set initial view to a readable slice (≤30 s)
     document.getElementById('plotPanel').style.display = '';
     yAuto = true;
     document.getElementById('yAutoBtn').classList.add('active');
     document.getElementById('yMinInput').disabled = true;
     document.getElementById('yMaxInput').disabled = true;
     viewEndTime = null;
-    viewWindowSec = Math.max(allData[allData.length - 1].x, 1);
-    document.getElementById('windowInput').value = viewWindowSec.toFixed(1);
+    const totalDuration = Math.max(allData[allData.length - 1].x - allData[0].x, 1);
+    viewWindowSec = Math.min(totalDuration, 30);
+    document.getElementById('windowInput').value = formatWindow(viewWindowSec);
 
     redraw();
   }

@@ -68,7 +68,7 @@
   
   .versions {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
     gap: 32px;
   }
   
@@ -101,6 +101,16 @@
   .version-card.mantis:hover {
     background: var(--accent);
     border-color: var(--accent);
+    color: #fff;
+  }
+  
+  .version-card.viewer {
+    border-color: #16a34a;
+  }
+  
+  .version-card.viewer:hover {
+    background: #16a34a;
+    border-color: #16a34a;
     color: #fff;
   }
   
@@ -202,6 +212,16 @@
         <div class="version-description">Streamlined dashboard focused on acceleration data in real-time. Faster, simpler, focused. Requires OR-Mantis TX (in-boat) and RX (coach) units.</div>
       </div>
       <div class="cta-text">→ Launch Mantis</div>
+    </a>
+    
+    <a href="viewer.html" class="version-card viewer">
+      <div>
+        <div class="version-label">Analysis</div>
+        <div class="version-title">Data Viewer</div>
+        <div class="version-badge">Import CSV / TXT</div>
+        <div class="version-description">Plot a saved Mantis acceleration file with adjustable scale. Import any CSV or TXT exported from the Mantis dashboard — no device required.</div>
+      </div>
+      <div class="cta-text">→ Open Viewer</div>
     </a>
   </div>
 </div>

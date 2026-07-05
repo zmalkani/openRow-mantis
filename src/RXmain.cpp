@@ -275,9 +275,9 @@ void handleReceivedPacket() {
     lastPacketAtMs  = millis();
     packetCount++;
 
-    // Broadcast over BLE (primary X axis for rowing)
+    // Broadcast over BLE as "timestamp_ms,accX,device_id"
     if (bleReady && pTelemetryCharacteristic) {
-      String blePayload = String(lastTimestampMs) + "," + String(lastAccXMps2, 3);
+      String blePayload = String(lastTimestampMs) + "," + String(lastAccXMps2, 3) + "," + String(lastDeviceId);
       pTelemetryCharacteristic->setValue(blePayload.c_str());
       pTelemetryCharacteristic->notify();
     }

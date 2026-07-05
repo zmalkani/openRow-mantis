@@ -109,10 +109,11 @@
 <main>
   <!-- Drop zone -->
   <div class="drop-zone" id="dropZone">
-    <input type="file" id="fileInput" style="display:none;" accept=".csv,.txt,text/csv,text/plain">
-    <div class="drop-zone-title">Drop a CSV or TXT file here</div>
-    <div class="drop-zone-sub">Accepts files exported from the Mantis dashboard — or click to browse</div>
-    <button class="pick-btn" id="pickBtn">Import CSV / TXT</button>
+  <label for="fileInput" style="display:none;">Import CSV or TXT file</label>
+  <input type="file" id="fileInput" style="display:none;" accept=".csv,.txt,text/csv,text/plain" aria-label="Import CSV or TXT file exported from Mantis">
+  <div class="drop-zone-title">Drop a CSV or TXT file here</div>
+  <div class="drop-zone-sub">Accepts files exported from the Mantis dashboard — or click to browse</div>
+  <button class="pick-btn" id="pickBtn">Import CSV / TXT</button>
   </div>
 
   <!-- Message area -->
@@ -127,12 +128,12 @@
         <span>Acceleration / Time</span>
       </div>
       <div class="plot-header-right">
-        <span class="ctrl-label">Window:</span>
-        <input class="ctrl-input" id="windowInput" type="number" min="0.5" max="99999" step="1" value="30" title="Visible time window (seconds)" style="width:54px;">
-        <span class="ctrl-label">s</span>
+        <label for="windowInput" class="ctrl-label">Window:</label>
+        <input class="ctrl-input" id="windowInput" type="number" min="0.5" max="99999" step="1" value="30" title="Visible time window (seconds)" aria-label="Visible time window in seconds" style="width:54px;">
+        <span class="ctrl-label" aria-hidden="true">s</span>
         <div class="ctrl-sep"></div>
-        <button class="ctrl-btn" id="panLeftBtn" title="Scroll earlier">&#9664;</button>
-        <button class="ctrl-btn" id="panRightBtn" title="Scroll later">&#9654;</button>
+        <button class="ctrl-btn" id="panLeftBtn" title="Scroll earlier" aria-label="Pan left, scroll to earlier data">&#9664;</button>
+        <button class="ctrl-btn" id="panRightBtn" title="Scroll later" aria-label="Pan right, scroll to later data">&#9654;</button>
         <div class="ctrl-sep"></div>
         <button class="ctrl-btn" id="fitBtn">Fit All</button>
       </div>
@@ -142,13 +143,13 @@
     <div class="scale-bar">
       <span class="ctrl-label">Y&nbsp;Scale:</span>
       <button class="ctrl-btn active" id="yAutoBtn">Auto</button>
-      <span class="ctrl-label">Min:</span>
-      <input class="ctrl-input" id="yMinInput" type="number" step="0.1" disabled style="width:60px;">
-      <span class="ctrl-label">Max:</span>
-      <input class="ctrl-input" id="yMaxInput" type="number" step="0.1" disabled style="width:60px;">
+      <label for="yMinInput" class="ctrl-label">Min:</label>
+      <input class="ctrl-input" id="yMinInput" type="number" step="0.1" disabled style="width:60px;" aria-label="Y axis minimum value">
+      <label for="yMaxInput" class="ctrl-label">Max:</label>
+      <input class="ctrl-input" id="yMaxInput" type="number" step="0.1" disabled style="width:60px;" aria-label="Y axis maximum value">
       <div class="ctrl-sep"></div>
-      <button class="ctrl-btn" id="yZoomInBtn" title="Zoom in (narrow Y range)">Y&nbsp;&#43;&nbsp;&#128269;</button>
-      <button class="ctrl-btn" id="yZoomOutBtn" title="Zoom out (widen Y range)">Y&nbsp;&#8722;&nbsp;&#128269;</button>
+      <button class="ctrl-btn" id="yZoomInBtn" title="Zoom in (narrow Y range)" aria-label="Zoom in on Y axis">Y&nbsp;&#43;&nbsp;&#128269;</button>
+      <button class="ctrl-btn" id="yZoomOutBtn" title="Zoom out (widen Y range)" aria-label="Zoom out on Y axis">Y&nbsp;&#8722;&nbsp;&#128269;</button>
       <div class="ctrl-sep"></div>
       <button class="ctrl-btn" id="resetBtn">Reset View</button>
     </div>
@@ -533,16 +534,16 @@
       return;
     }
 
-    // Sort by uptime then convert to seconds from start
+    // Sort by uptime then convert to seconds from start (creates new objects, preserving originals)
     points.sort((a, b) => a.x - b.x);
     const t0 = points[0].x;
-    for (const p of points) p.x = (p.x - t0) / 1000;
+    const converted = points.map(p => ({ x: (p.x - t0) / 1000, y: p.y, deviceId: p.deviceId }));
 
-    // Build state
-    allData = points;
+    // Build state from converted points
+    allData = converted;
     seriesByDevice = new Map();
     deviceColors = new Map();
-    for (const p of points) {
+    for (const p of converted) {
       if (!seriesByDevice.has(p.deviceId)) seriesByDevice.set(p.deviceId, []);
       seriesByDevice.get(p.deviceId).push({ x: p.x, y: p.y });
     }
@@ -550,14 +551,14 @@
     // Update config bar
     document.getElementById('fileNameLabel').textContent = filename;
     document.getElementById('footerInfo').textContent =
-      `${points.length.toLocaleString()} points · ${seriesByDevice.size} device${seriesByDevice.size !== 1 ? 's' : ''}`;
+      `${converted.length.toLocaleString()} points · ${seriesByDevice.size} device${seriesByDevice.size !== 1 ? 's' : ''}`;
 
     // Show success message
     const timeSpan = allData[allData.length - 1].x.toFixed(1);
     const devList = [...seriesByDevice.keys()].map(deviceLabel).join(', ');
     showMessage('success',
       `&#10003; Loaded <strong>${escHtml(filename)}</strong> &#8212; ` +
-      `${points.length.toLocaleString()} points &middot; ` +
+      `${converted.length.toLocaleString()} points &middot; ` +
       `${seriesByDevice.size} device${seriesByDevice.size !== 1 ? 's' : ''} (${escHtml(devList)}) &middot; ` +
       `${timeSpan}s span`
     );

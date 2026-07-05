@@ -1,0 +1,641 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>openRow — Data Viewer</title>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #ffffff; --panel: #f4f6f9; --panel2: #eef1f6; --border: #dde2ea;
+    --accent: #1a5cff; --text: #0d0d0d; --muted: #8a93a8;
+    --mono: 'DM Mono', monospace; --display: 'Outfit', sans-serif;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: var(--bg); color: var(--text); font-family: var(--display); min-height: 100vh; display: flex; flex-direction: column; }
+  header { display: flex; align-items: center; justify-content: space-between; padding: 18px 32px; border-bottom: 2px solid var(--text); background: var(--bg); }
+  .logo-area { display: flex; align-items: center; gap: 14px; }
+  .logo-svg { height: 44px; width: auto; }
+  .logo-text { font-family: var(--display); font-weight: 800; font-size: 1.7rem; letter-spacing: -0.03em; color: var(--text); line-height: 1; }
+  .logo-text span { color: var(--accent); }
+  .logo-sub { font-family: var(--mono); font-size: 0.6rem; color: var(--muted); letter-spacing: 0.2em; text-transform: uppercase; margin-top: 3px; }
+  .header-right { display: flex; align-items: center; gap: 16px; }
+  .icon-btn { font-family: var(--display); font-weight: 600; font-size: 0.85rem; letter-spacing: 0.03em; padding: 10px 18px; background: #fff; border: 2px solid var(--border); color: var(--muted); cursor: pointer; border-radius: 4px; transition: all 0.18s; display: flex; align-items: center; gap: 7px; }
+  .icon-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .icon-btn svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+  .config-bar { padding: 10px 32px; border-bottom: 1px solid var(--border); display: flex; gap: 16px; align-items: center; flex-wrap: wrap; background: var(--panel); }
+  .config-label { font-family: var(--mono); font-size: 0.62rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.12em; white-space: nowrap; }
+  .version-link { font-family: var(--mono); font-size: 0.62rem; color: var(--accent); text-decoration: underline; }
+  main { flex: 1; padding: 28px 32px; display: flex; flex-direction: column; gap: 16px; max-width: 1040px; width: 100%; margin: 0 auto; }
+
+  /* Drop zone */
+  .drop-zone { border: 2px dashed var(--border); border-radius: 8px; padding: 40px 32px; text-align: center; background: var(--panel); transition: all 0.2s; }
+  .drop-zone.drag-over { border-color: var(--accent); background: #f0f4ff; }
+  .drop-zone-title { font-family: var(--display); font-weight: 700; font-size: 1.2rem; margin-bottom: 8px; }
+  .drop-zone-sub { font-family: var(--mono); font-size: 0.72rem; color: var(--muted); margin-bottom: 20px; }
+  .pick-btn { font-family: var(--display); font-weight: 600; font-size: 0.85rem; letter-spacing: 0.03em; padding: 10px 22px; background: var(--text); border: 2px solid var(--text); color: #fff; cursor: pointer; border-radius: 4px; transition: all 0.18s; }
+  .pick-btn:hover { background: var(--accent); border-color: var(--accent); }
+
+  /* Messages */
+  .msg-error { background: #fff5f5; border: 1px solid #fca5a5; border-radius: 6px; padding: 12px 16px; font-family: var(--mono); font-size: 0.78rem; color: #dc2626; line-height: 1.7; }
+  .msg-success { background: #f0fdf4; border: 1px solid #86efac; border-radius: 6px; padding: 12px 16px; font-family: var(--mono); font-size: 0.78rem; color: #16a34a; line-height: 1.7; }
+
+  /* Plot panel */
+  .plot-panel { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+  .plot-header { padding: 10px 18px; border-bottom: 1px solid var(--border); font-family: var(--mono); font-size: 0.62rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.15em; display: flex; justify-content: space-between; align-items: center; background: var(--panel2); flex-wrap: wrap; gap: 8px; }
+  .plot-header-label { display: flex; align-items: center; gap: 8px; }
+  .plot-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: #1a5cff; }
+  .plot-header-right { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .scale-bar { padding: 8px 18px; border-bottom: 1px solid var(--border); display: flex; gap: 6px; align-items: center; flex-wrap: wrap; background: var(--panel); }
+  .ctrl-btn { background: none; border: 1px solid var(--border); color: var(--muted); font-family: var(--mono); font-size: 0.6rem; padding: 3px 8px; cursor: pointer; text-transform: uppercase; letter-spacing: 0.1em; border-radius: 3px; transition: all 0.18s; white-space: nowrap; }
+  .ctrl-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .ctrl-btn.active { border-color: var(--accent); color: #fff; background: var(--accent); }
+  .ctrl-sep { width: 1px; height: 16px; background: var(--border); flex-shrink: 0; margin: 0 2px; }
+  .ctrl-input { font-family: var(--mono); font-size: 0.65rem; background: #fff; border: 1px solid var(--border); color: var(--text); padding: 3px 6px; width: 64px; outline: none; border-radius: 3px; transition: border-color 0.2s; }
+  .ctrl-input:focus { border-color: var(--accent); }
+  .ctrl-input:disabled { background: var(--panel2); color: var(--muted); }
+  .ctrl-label { font-family: var(--mono); font-size: 0.6rem; color: var(--muted); white-space: nowrap; text-transform: uppercase; letter-spacing: 0.1em; }
+  canvas.chart { display: block; width: 100%; height: 240px; cursor: grab; touch-action: pan-y; }
+  canvas.chart.grabbing { cursor: grabbing; }
+  .plot-legend { padding: 8px 18px 10px; border-top: 1px solid var(--border); display: flex; gap: 8px 14px; align-items: center; flex-wrap: wrap; background: #fff; min-height: 34px; }
+  .legend-item { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 0.62rem; color: var(--muted); }
+  .legend-swatch { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .legend-empty { font-family: var(--mono); font-size: 0.62rem; color: var(--muted); }
+
+  footer { padding: 14px 32px; border-top: 1px solid var(--border); font-family: var(--mono); font-size: 0.62rem; color: var(--muted); display: flex; justify-content: space-between; background: var(--panel); margin-top: auto; }
+
+  @media (max-width: 700px) {
+    main { padding: 16px; }
+    header, .config-bar { padding: 14px 16px; }
+    .drop-zone { padding: 28px 16px; }
+    footer { padding: 12px 16px; flex-direction: column; gap: 4px; }
+    .icon-btn span { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo-area">
+    <svg class="logo-svg" viewBox="0 0 960 720" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path fill="#000" d="M343.24 34.14h303.53v646.83H343.24z"/>
+      <path fill="#000" d="M0 357.56c0-178.62 144.8-323.42 323.42-323.42 85.78 0 168.04 34.07 228.69 94.73 60.65 60.65 94.73 142.91 94.73 228.69 0 178.62-144.8 323.42-323.42 323.42C144.8 680.98 0 536.18 0 357.56z"/>
+      <path fill="#fff" d="M166.62 357.56c0-89.81 72.8-162.61 162.61-162.61 43.13 0 84.49 17.13 114.99 47.63 30.5 30.5 47.63 71.86 47.63 114.98 0 89.81-72.8 162.61-162.61 162.61-89.81 0-162.62-72.8-162.62-162.61z"/>
+      <path fill="#000" d="M642.38 34.14c84.55 0 162.53 44.15 204.05 115.53 41.52 71.37 40.14 158.89-3.62 229-43.76 70.11-123.1 111.92-207.61 109.41l4.54-143.6c32.66.87 63.3-14.5 80.18-40.25 16.88-25.74 17.39-57.86 1.33-84.04-16.06-26.18-46.2-42.38-78.88-42.38V34.14z"/>
+      <path fill="#000" d="M756.88 680.98 616.69 535.63V325.04l343.31 355.94H756.88z"/>
+      <path fill="#000" d="M408.11 470.22H250.9v-41.13h49.66V304.61H250.9v-38.44q11.39 0 21.83-1.34 10.44-1.34 17.39-4.66 8.23-3.95 12.34-10.28 4.11-6.33 4.75-15.83h52.34v195.03h48.56v41.13z"/>
+    </svg>
+    <div>
+      <div class="logo-text">open<span>Row</span> Mantis</div>
+      <div class="logo-sub">Data Viewer</div>
+    </div>
+  </div>
+  <div class="header-right">
+    <button class="icon-btn" id="headerImportBtn">
+      <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 5 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      <span>Import File</span>
+    </button>
+  </div>
+</header>
+
+<div class="config-bar">
+  <span class="config-label">File</span>
+  <span id="fileNameLabel" style="font-family: var(--mono); font-size: 0.72rem; color: var(--text);">No file loaded</span>
+  <span style="margin-left: auto; font-family: var(--mono); font-size: 0.62rem; color: var(--muted);">
+    <a href="index.html" class="version-link">← Back to Version Selector</a>
+  </span>
+</div>
+
+<main>
+  <!-- Drop zone -->
+  <div class="drop-zone" id="dropZone">
+    <input type="file" id="fileInput" style="display:none;" accept=".csv,.txt,text/csv,text/plain">
+    <div class="drop-zone-title">Drop a CSV or TXT file here</div>
+    <div class="drop-zone-sub">Accepts files exported from the Mantis dashboard — or click to browse</div>
+    <button class="pick-btn" id="pickBtn">Import CSV / TXT</button>
+  </div>
+
+  <!-- Message area -->
+  <div id="msgArea" style="display:none;"></div>
+
+  <!-- Plot panel — hidden until data is loaded -->
+  <div class="plot-panel" id="plotPanel" style="display:none;">
+    <!-- X-axis controls in plot header -->
+    <div class="plot-header">
+      <div class="plot-header-label">
+        <div class="plot-dot"></div>
+        <span>Acceleration / Time</span>
+      </div>
+      <div class="plot-header-right">
+        <span class="ctrl-label">Window:</span>
+        <input class="ctrl-input" id="windowInput" type="number" min="0.5" max="99999" step="1" value="30" title="Visible time window (seconds)" style="width:54px;">
+        <span class="ctrl-label">s</span>
+        <div class="ctrl-sep"></div>
+        <button class="ctrl-btn" id="panLeftBtn" title="Scroll earlier">&#9664;</button>
+        <button class="ctrl-btn" id="panRightBtn" title="Scroll later">&#9654;</button>
+        <div class="ctrl-sep"></div>
+        <button class="ctrl-btn" id="fitBtn">Fit All</button>
+      </div>
+    </div>
+
+    <!-- Y-axis scale controls -->
+    <div class="scale-bar">
+      <span class="ctrl-label">Y&nbsp;Scale:</span>
+      <button class="ctrl-btn active" id="yAutoBtn">Auto</button>
+      <span class="ctrl-label">Min:</span>
+      <input class="ctrl-input" id="yMinInput" type="number" step="0.1" disabled style="width:60px;">
+      <span class="ctrl-label">Max:</span>
+      <input class="ctrl-input" id="yMaxInput" type="number" step="0.1" disabled style="width:60px;">
+      <div class="ctrl-sep"></div>
+      <button class="ctrl-btn" id="yZoomInBtn" title="Zoom in (narrow Y range)">Y&nbsp;&#43;&nbsp;&#128269;</button>
+      <button class="ctrl-btn" id="yZoomOutBtn" title="Zoom out (widen Y range)">Y&nbsp;&#8722;&nbsp;&#128269;</button>
+      <div class="ctrl-sep"></div>
+      <button class="ctrl-btn" id="resetBtn">Reset View</button>
+    </div>
+
+    <canvas class="chart" id="accChart"></canvas>
+
+    <div class="plot-legend" id="plotLegend">
+      <span class="legend-empty">No data</span>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <span>openRow Mantis · Data Viewer</span>
+  <span id="footerInfo"></span>
+</footer>
+
+<script>
+  // ---- Constants (match mantis.html) ----
+  const CHART_PAD = { top: 12, right: 12, bottom: 26, left: 52 };
+  const DEVICE_COLORS = ['#1a5cff', '#a855f7', '#16a34a', '#f97316', '#ec4899', '#14b8a6', '#eab308', '#ef4444'];
+
+  // ---- Data state ----
+  let allData = [];           // [{x (seconds from start), y (m/s²), deviceId}]
+  let seriesByDevice = new Map();  // deviceId -> [{x, y}]
+  let deviceColors = new Map();
+
+  // ---- View state ----
+  let viewWindowSec = 30;    // visible time span in seconds
+  let viewEndTime = null;    // right edge of view in seconds; null = show end of data
+  let yAuto = true;
+  let yManualMin = 0;
+  let yManualMax = 20;
+
+  const accCanvas = document.getElementById('accChart');
+  const accCtx = accCanvas.getContext('2d');
+
+  // ---- Helpers ----
+  function getDeviceColor(deviceId) {
+    if (!deviceColors.has(deviceId)) {
+      const idx = deviceColors.size % DEVICE_COLORS.length;
+      deviceColors.set(deviceId, DEVICE_COLORS[idx]);
+    }
+    return deviceColors.get(deviceId);
+  }
+
+  function deviceLabel(deviceId) {
+    if (deviceId === 'default') return 'Device';
+    if (deviceId === 'unknown') return 'Unknown';
+    return /^id\s+/i.test(deviceId) ? deviceId : `ID ${deviceId}`;
+  }
+
+  function sizeCanvas(canvas) {
+    const rect = canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    if (canvas.width !== rect.width * dpr || canvas.height !== rect.height * dpr) {
+      canvas.width = rect.width * dpr;
+      canvas.height = rect.height * dpr;
+      canvas.getContext('2d').scale(dpr, dpr);
+    }
+  }
+
+  // ---- Chart drawing (adapted from mantis.html drawChart) ----
+  function drawChart() {
+    sizeCanvas(accCanvas);
+    const W = accCanvas.getBoundingClientRect().width;
+    const H = accCanvas.getBoundingClientRect().height;
+    accCtx.clearRect(0, 0, accCanvas.width, accCanvas.height);
+    const PAD = CHART_PAD;
+    const plotW = W - PAD.left - PAD.right;
+    const plotH = H - PAD.top - PAD.bottom;
+
+    accCtx.fillStyle = '#f4f6f9';
+    accCtx.fillRect(0, 0, W, H);
+
+    if (allData.length < 2) {
+      accCtx.font = "11px 'DM Mono', monospace";
+      accCtx.fillStyle = '#c0c8d8';
+      accCtx.textAlign = 'center';
+      accCtx.textBaseline = 'middle';
+      accCtx.fillText('no data loaded — import a CSV or TXT file', W / 2, H / 2);
+      return;
+    }
+
+    const dataXMin = allData[0].x;
+    const dataXMax = allData[allData.length - 1].x;
+
+    // X range
+    const xMax = viewEndTime !== null ? viewEndTime : dataXMax;
+    const xMin = Math.max(dataXMin, xMax - viewWindowSec);
+    const xRange = xMax - xMin || 1;
+
+    // Collect visible points per device
+    const visibleByDevice = [];
+    let yDataMin = Infinity, yDataMax = -Infinity;
+    for (const [deviceId, series] of seriesByDevice.entries()) {
+      const visible = series.filter(p => p.x >= xMin - 0.5 && p.x <= xMax + 0.5);
+      if (!visible.length) continue;
+      visibleByDevice.push([deviceId, visible]);
+      for (const p of visible) {
+        if (p.y < yDataMin) yDataMin = p.y;
+        if (p.y > yDataMax) yDataMax = p.y;
+      }
+    }
+
+    // Y range
+    let yMin, yMax;
+    if (yAuto) {
+      if (!isFinite(yDataMin) || !isFinite(yDataMax)) { yDataMin = -1; yDataMax = 1; }
+      const yPad = (yDataMax - yDataMin) * 0.15 || 1;
+      yMin = yDataMin - yPad;
+      yMax = yDataMax + yPad;
+    } else {
+      yMin = yManualMin;
+      yMax = yManualMax;
+    }
+    if (yMax === yMin) { yMin -= 1; yMax += 1; }
+
+    const px = x => PAD.left + ((x - xMin) / xRange) * plotW;
+    const py = y => PAD.top + (1 - (y - yMin) / (yMax - yMin)) * plotH;
+
+    // Y gridlines + labels
+    accCtx.font = "10px 'DM Mono', monospace";
+    accCtx.textAlign = 'right';
+    accCtx.textBaseline = 'middle';
+    for (let i = 0; i <= 4; i++) {
+      const yVal = yMin + (yMax - yMin) * (i / 4);
+      const y = py(yVal);
+      accCtx.strokeStyle = '#dde2ea'; accCtx.lineWidth = 1;
+      accCtx.beginPath(); accCtx.moveTo(PAD.left, y); accCtx.lineTo(PAD.left + plotW, y); accCtx.stroke();
+      accCtx.fillStyle = '#8a93a8';
+      accCtx.fillText(yVal.toFixed(1), PAD.left - 6, y);
+    }
+
+    // X labels
+    accCtx.textAlign = 'center'; accCtx.textBaseline = 'top'; accCtx.fillStyle = '#8a93a8';
+    for (let i = 0; i <= 5; i++) {
+      const xVal = xMin + xRange * (i / 5);
+      accCtx.fillText(xVal.toFixed(1) + 's', px(xVal), PAD.top + plotH + 6);
+    }
+
+    // Clip plot area and draw series
+    accCtx.save();
+    accCtx.beginPath(); accCtx.rect(PAD.left, PAD.top, plotW, plotH); accCtx.clip();
+    for (const [deviceId, visible] of visibleByDevice) {
+      const color = getDeviceColor(deviceId);
+      accCtx.beginPath();
+      accCtx.moveTo(px(visible[0].x), py(visible[0].y));
+      for (let i = 1; i < visible.length; i++) accCtx.lineTo(px(visible[i].x), py(visible[i].y));
+      accCtx.strokeStyle = color; accCtx.lineWidth = 1.8; accCtx.lineJoin = 'round'; accCtx.lineCap = 'round'; accCtx.stroke();
+      const last = visible[visible.length - 1];
+      accCtx.beginPath(); accCtx.arc(px(last.x), py(last.y), 3.5, 0, Math.PI * 2);
+      accCtx.fillStyle = color; accCtx.fill();
+      accCtx.strokeStyle = '#fff'; accCtx.lineWidth = 1.2; accCtx.stroke();
+    }
+    accCtx.restore();
+  }
+
+  function updateLegend() {
+    const legend = document.getElementById('plotLegend');
+    if (!legend) return;
+    const entries = [];
+    for (const [deviceId, series] of seriesByDevice.entries()) {
+      if (!series.length) continue;
+      entries.push({ deviceId, color: getDeviceColor(deviceId) });
+    }
+    entries.sort((a, b) => a.deviceId.localeCompare(b.deviceId, undefined, { numeric: true, sensitivity: 'base' }));
+    if (!entries.length) {
+      legend.innerHTML = '<span class="legend-empty">No data</span>';
+      return;
+    }
+    legend.textContent = '';
+    for (const entry of entries) {
+      const item = document.createElement('span');
+      item.className = 'legend-item';
+      const swatch = document.createElement('span');
+      swatch.className = 'legend-swatch';
+      swatch.style.background = entry.color;
+      const label = document.createElement('span');
+      label.textContent = deviceLabel(entry.deviceId);
+      item.appendChild(swatch);
+      item.appendChild(label);
+      legend.appendChild(item);
+    }
+  }
+
+  function redraw() {
+    drawChart();
+    updateLegend();
+  }
+
+  requestAnimationFrame(redraw);
+  window.addEventListener('resize', redraw);
+
+  // ---- View / zoom controls ----
+  function clampView() {
+    if (allData.length < 2 || viewEndTime === null) return;
+    const dataXMax = allData[allData.length - 1].x;
+    const dataXMin = allData[0].x;
+    const minEnd = Math.min(dataXMin + viewWindowSec, dataXMax);
+    if (viewEndTime < minEnd) viewEndTime = minEnd;
+    if (viewEndTime >= dataXMax) viewEndTime = null;
+  }
+
+  function fitAll() {
+    if (allData.length < 2) return;
+    viewEndTime = null;
+    viewWindowSec = Math.max(allData[allData.length - 1].x - allData[0].x, 1);
+    document.getElementById('windowInput').value = viewWindowSec.toFixed(1);
+    redraw();
+  }
+
+  function panView(direction) {
+    if (allData.length < 2) return;
+    const base = viewEndTime !== null ? viewEndTime : allData[allData.length - 1].x;
+    viewEndTime = base + direction * viewWindowSec * 0.2;
+    clampView();
+    redraw();
+  }
+
+  function resetView() {
+    yAuto = true;
+    document.getElementById('yAutoBtn').classList.add('active');
+    document.getElementById('yMinInput').disabled = true;
+    document.getElementById('yMaxInput').disabled = true;
+    fitAll();
+  }
+
+  function switchToManualY() {
+    // Compute current auto Y range from all data
+    let yDataMin = Infinity, yDataMax = -Infinity;
+    for (const p of allData) {
+      if (p.y < yDataMin) yDataMin = p.y;
+      if (p.y > yDataMax) yDataMax = p.y;
+    }
+    if (!isFinite(yDataMin)) { yDataMin = 0; yDataMax = 20; }
+    const yPad = (yDataMax - yDataMin) * 0.15 || 1;
+    yManualMin = Math.round((yDataMin - yPad) * 100) / 100;
+    yManualMax = Math.round((yDataMax + yPad) * 100) / 100;
+    document.getElementById('yMinInput').value = yManualMin;
+    document.getElementById('yMaxInput').value = yManualMax;
+    yAuto = false;
+    document.getElementById('yAutoBtn').classList.remove('active');
+    document.getElementById('yMinInput').disabled = false;
+    document.getElementById('yMaxInput').disabled = false;
+  }
+
+  function toggleYAuto() {
+    if (yAuto) {
+      switchToManualY();
+    } else {
+      yAuto = true;
+      document.getElementById('yAutoBtn').classList.add('active');
+      document.getElementById('yMinInput').disabled = true;
+      document.getElementById('yMaxInput').disabled = true;
+    }
+    redraw();
+  }
+
+  function zoomY(factor) {
+    if (yAuto) switchToManualY();
+    const center = (yManualMin + yManualMax) / 2;
+    const halfRange = (yManualMax - yManualMin) / 2 * factor;
+    yManualMin = Math.round((center - halfRange) * 100) / 100;
+    yManualMax = Math.round((center + halfRange) * 100) / 100;
+    document.getElementById('yMinInput').value = yManualMin;
+    document.getElementById('yMaxInput').value = yManualMax;
+    redraw();
+  }
+
+  // Control event listeners
+  document.getElementById('fitBtn').addEventListener('click', fitAll);
+  document.getElementById('panLeftBtn').addEventListener('click', () => panView(-1));
+  document.getElementById('panRightBtn').addEventListener('click', () => panView(1));
+  document.getElementById('resetBtn').addEventListener('click', resetView);
+  document.getElementById('yAutoBtn').addEventListener('click', toggleYAuto);
+  document.getElementById('yZoomInBtn').addEventListener('click', () => zoomY(0.75));
+  document.getElementById('yZoomOutBtn').addEventListener('click', () => zoomY(1 / 0.75));
+
+  document.getElementById('windowInput').addEventListener('change', () => {
+    const val = parseFloat(document.getElementById('windowInput').value);
+    if (isFinite(val) && val > 0) {
+      viewWindowSec = val;
+      clampView();
+      redraw();
+    }
+  });
+
+  document.getElementById('yMinInput').addEventListener('change', () => {
+    const val = parseFloat(document.getElementById('yMinInput').value);
+    if (isFinite(val)) { yManualMin = val; redraw(); }
+  });
+
+  document.getElementById('yMaxInput').addEventListener('change', () => {
+    const val = parseFloat(document.getElementById('yMaxInput').value);
+    if (isFinite(val)) { yManualMax = val; redraw(); }
+  });
+
+  // ---- Pan interactions (wheel + drag, adapted from mantis.html) ----
+  accCanvas.addEventListener('wheel', e => {
+    if (allData.length < 2) return;
+    e.preventDefault();
+    const base = viewEndTime !== null ? viewEndTime : allData[allData.length - 1].x;
+    viewEndTime = base - Math.sign(e.deltaY) * viewWindowSec * 0.2;
+    clampView();
+    redraw();
+  }, { passive: false });
+
+  let isDragging = false, dragStartX = 0, dragStartEnd = 0;
+  accCanvas.addEventListener('pointerdown', e => {
+    if (allData.length < 2) return;
+    isDragging = true;
+    dragStartX = e.clientX;
+    dragStartEnd = viewEndTime !== null ? viewEndTime : allData[allData.length - 1].x;
+    accCanvas.classList.add('grabbing');
+    try { accCanvas.setPointerCapture(e.pointerId); } catch (_) {}
+  });
+  accCanvas.addEventListener('pointermove', e => {
+    if (!isDragging) return;
+    const plotW = Math.max(1, accCanvas.getBoundingClientRect().width - (CHART_PAD.left + CHART_PAD.right));
+    const secPerPx = viewWindowSec / plotW;
+    viewEndTime = dragStartEnd - (e.clientX - dragStartX) * secPerPx;
+    clampView();
+    redraw();
+  });
+  function endDrag(e) {
+    if (!isDragging) return;
+    isDragging = false;
+    accCanvas.classList.remove('grabbing');
+    try { accCanvas.releasePointerCapture(e.pointerId); } catch (_) {}
+  }
+  accCanvas.addEventListener('pointerup', endDrag);
+  accCanvas.addEventListener('pointercancel', endDrag);
+
+  // ---- File import ----
+  const fileInput = document.getElementById('fileInput');
+  const dropZone  = document.getElementById('dropZone');
+
+  document.getElementById('headerImportBtn').addEventListener('click', () => fileInput.click());
+  document.getElementById('pickBtn').addEventListener('click', e => {
+    e.stopPropagation();
+    fileInput.click();
+  });
+  dropZone.addEventListener('click', () => fileInput.click());
+
+  fileInput.addEventListener('change', () => {
+    if (fileInput.files.length) loadFile(fileInput.files[0]);
+    fileInput.value = '';
+  });
+
+  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.classList.remove('drag-over');
+    const file = e.dataTransfer.files[0];
+    if (file) loadFile(file);
+  });
+
+  function loadFile(file) {
+    const reader = new FileReader();
+    reader.onload = ev => parseFileContent(file.name, ev.target.result);
+    reader.onerror = () => showError('Failed to read file.');
+    reader.readAsText(file);
+  }
+
+  function parseFileContent(filename, content) {
+    let points;
+    const lower = filename.toLowerCase();
+    if (lower.endsWith('.csv')) {
+      points = parseCSV(content);
+    } else if (lower.endsWith('.txt')) {
+      points = parseTXT(content);
+    } else {
+      // Auto-detect: if first non-blank line has commas, try CSV
+      const firstLine = content.split('\n').find(l => l.trim().length > 0) || '';
+      points = firstLine.includes(',') ? parseCSV(content) : parseTXT(content);
+    }
+
+    if (!points || points.length === 0) {
+      showError('No valid data points found in this file. Make sure it was exported from the Mantis dashboard (CSV or TXT format).');
+      return;
+    }
+
+    // Sort by uptime then convert to seconds from start
+    points.sort((a, b) => a.x - b.x);
+    const t0 = points[0].x;
+    for (const p of points) p.x = (p.x - t0) / 1000;
+
+    // Build state
+    allData = points;
+    seriesByDevice = new Map();
+    deviceColors = new Map();
+    for (const p of points) {
+      if (!seriesByDevice.has(p.deviceId)) seriesByDevice.set(p.deviceId, []);
+      seriesByDevice.get(p.deviceId).push({ x: p.x, y: p.y });
+    }
+
+    // Update config bar
+    document.getElementById('fileNameLabel').textContent = filename;
+    document.getElementById('footerInfo').textContent =
+      `${points.length.toLocaleString()} points · ${seriesByDevice.size} device${seriesByDevice.size !== 1 ? 's' : ''}`;
+
+    // Show success message
+    const timeSpan = allData[allData.length - 1].x.toFixed(1);
+    const devList = [...seriesByDevice.keys()].map(deviceLabel).join(', ');
+    showMessage('success',
+      `&#10003; Loaded <strong>${escHtml(filename)}</strong> &#8212; ` +
+      `${points.length.toLocaleString()} points &middot; ` +
+      `${seriesByDevice.size} device${seriesByDevice.size !== 1 ? 's' : ''} (${escHtml(devList)}) &middot; ` +
+      `${timeSpan}s span`
+    );
+
+    // Show plot panel and fit view
+    document.getElementById('plotPanel').style.display = '';
+    yAuto = true;
+    document.getElementById('yAutoBtn').classList.add('active');
+    document.getElementById('yMinInput').disabled = true;
+    document.getElementById('yMaxInput').disabled = true;
+    viewEndTime = null;
+    viewWindowSec = Math.max(allData[allData.length - 1].x, 1);
+    document.getElementById('windowInput').value = viewWindowSec.toFixed(1);
+
+    redraw();
+  }
+
+  // CSV: wall_time,device_uptime_ms,acceleration_ms2,device_id
+  function parseCSV(content) {
+    const lines = content.split('\n');
+    const points = [];
+    for (const line of lines) {
+      const row = line.trim();
+      if (!row) continue;
+      // Skip header row (starts with 'wall_time' or 'device_uptime_ms')
+      const lower = row.toLowerCase();
+      if (lower.startsWith('wall_time') || lower.startsWith('device_uptime_ms')) continue;
+
+      const parts = row.split(',');
+      if (parts.length < 3) continue;
+
+      let uptime, acc, deviceId;
+      if (parts.length >= 4) {
+        // Standard format: wall_time,device_uptime_ms,acceleration_ms2,device_id
+        uptime   = parseFloat(parts[1]);
+        acc      = parseFloat(parts[2]);
+        deviceId = (parts[3] || '').trim() || 'unknown';
+      } else {
+        // Fallback: try first two numeric columns
+        uptime   = parseFloat(parts[0]);
+        acc      = parseFloat(parts[1]);
+        deviceId = 'unknown';
+      }
+
+      if (!isFinite(uptime) || !isFinite(acc)) continue;
+      points.push({ x: uptime, y: acc, deviceId });
+    }
+    return points;
+  }
+
+  // TXT: alternating lines — device_uptime_ms then acceleration_ms2
+  function parseTXT(content) {
+    const lines = content.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+    const points = [];
+    for (let i = 0; i + 1 < lines.length; i += 2) {
+      const uptime = parseFloat(lines[i]);
+      const acc    = parseFloat(lines[i + 1]);
+      if (!isFinite(uptime) || !isFinite(acc)) continue;
+      points.push({ x: uptime, y: acc, deviceId: 'default' });
+    }
+    return points;
+  }
+
+  function escHtml(str) {
+    return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function showMessage(type, html) {
+    const area = document.getElementById('msgArea');
+    area.innerHTML = `<div class="msg-${type}">${html}</div>`;
+    area.style.display = '';
+  }
+
+  function showError(msg) {
+    showMessage('error', `&#9888; ${escHtml(msg)}`);
+    document.getElementById('plotPanel').style.display = 'none';
+  }
+</script>
+
+</body>
+</html>

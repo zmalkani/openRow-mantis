@@ -1,6 +1,6 @@
 # openRow mantis
 
-openRow Mantis is a simple rowing telemetry rig I built to get live acceleration data off the boat and onto a screen the coach can actually read while following alongside. One unit rides in the boat, reads the hull's acceleration, and sends it over a LoRa radio link. A second unit on the coach's side reads the data and hands it to a web page over Bluetooth, so you watch the stroke trace in real time on a phone or laptop.
+openRow Mantis is a simple rowing telemetry rig I built to get live acceleration data off the boat and onto a screen the coach can actually read while following alongside. One unit rides in the boat, reads the hull's acceleration, and sends it over a one-way LoRa frequency. A second unit on the coach's side reads the data and hands it to a web page over Bluetooth, so you watch the stroke trace in real time on a phone or laptop.
 
 ## How it works
 There are two units talking to each other:

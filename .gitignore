@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.DS_Store
+ios/App/App/public/
+ios/App/App/capacitor.config.json
+ios/App/Pods/
+ios/App/build/
+ios/DerivedData/
+**/xcuserdata/
+src/.pio/

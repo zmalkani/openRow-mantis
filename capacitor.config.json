@@ -1,0 +1,16 @@
+{
+  "appId": "ca.zmalkani.openrow.mantis",
+  "appName": "openRow",
+  "webDir": "dist",
+  "ios": { "contentInset": "automatic", "preferredContentMode": "mobile" },
+  "plugins": {
+    "BluetoothLe": {
+      "displayStrings": {
+        "scanning": "Looking for openRow receivers…",
+        "cancel": "Cancel",
+        "availableDevices": "Select your openRow receiver",
+        "noDeviceFound": "Power on your RX unit and try again"
+      }
+    }
+  }
+}

@@ -37,6 +37,8 @@ Before flashing the TX, you can set its 4-digit `ID` near the top of `src/TXmain
 
 ## Using the dashboard
 
+**iPad app:** See [IPAD.md](IPAD.md) for the native openRow app and installation steps. It uses native Bluetooth, since Safari/Home Screen web apps cannot connect to the RX directly. The web dashboard remains available below.
+
 Once the RX unit is powered on and advertising over Bluetooth, here's how to watch your data:
 
 1. **Open the dashboard.** Go to <https://zmalkani.github.io/openRow-mantis/mantis.html> in Chrome on desktop or Android. Web Bluetooth only works in Chromium-based browsers — Safari and Firefox won't connect, and the page will tell you if that's the problem.

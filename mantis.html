@@ -151,11 +151,11 @@
     </div>
     <div class="guide-body" id="guideBody">
       <ol class="guide-list">
-        <li><strong>Open the dashboard.</strong> <span>This page only works in Chrome on desktop or Android. Web Bluetooth only works in Chromium-based browsers — Safari and Firefox won't connect, and the page will tell you if that's the problem.</span></li>
+        <li><strong>Open the dashboard.</strong> <span>Use the openRow app on iPad, or Chrome on desktop / Android. Safari and Firefox cannot connect to the receiver directly.</span></li>
         <li><strong>Power on the RX unit</strong> <span>and make sure its OLED shows the receiver is running. The TX unit should be on too, so there's actual data flowing.</span></li>
-        <li><strong>Hit Connect</strong> <span>(top right). A browser pop-up lists nearby Bluetooth devices — pick <code>openRow_RX</code>. The status dot turns green when it's connected.</span></li>
+        <li><strong>Hit Connect</strong> <span>(top right). Allow Bluetooth access, then pick <code>openRow_RX</code> from the device list. The status dot turns green when it's connected. If access was denied on iPad, enable it in Settings → Privacy &amp; Security → Bluetooth.</span></li>
         <li><strong>Watch the numbers.</strong> <span>The Acceleration card shows the live resultant value, Device Uptime shows how long the TX has been running, and the graph plots acceleration over time as the boat moves.</span></li>
-        <li><strong>Save your data</strong> <span>if you want — the two export buttons up top download the session as a file once you're connected.</span></li>
+        <li><strong>Save your data</strong> <span>with Export CSV or TXT. In the iPad app, exports are saved in Files → On My iPad → openRow → Sessions, and a share sheet opens. Keep the app visible while recording; export before closing it.</span></li>
       </ol>
       <div class="guide-note">
         If the device doesn't show up in the pop-up, double-check the RX unit is powered, the antenna is on, and you're not already connected from another tab. The two UUID fields above (Service UUID and Char UUID) are pre-filled to match the firmware — you only need to touch those if you've changed the UUIDs in <code>RXmain.cpp</code>.
@@ -424,7 +424,8 @@
   accCanvas.addEventListener('pointerup', endDrag);
   accCanvas.addEventListener('pointercancel', endDrag);
 
-  if (!navigator.bluetooth) {
+  const nativeApp = window.OpenRowNative?.available ? window.OpenRowNative : null;
+  if (!nativeApp && !navigator.bluetooth) {
     document.getElementById('noBleWarning').style.display = 'block';
     document.getElementById('connectBtn').disabled = true;
   }
@@ -433,7 +434,25 @@
   document.getElementById('exportBtn').addEventListener('click', exportCSV);
   document.getElementById('exportTxtBtn').addEventListener('click', exportTXT);
 
+  if (nativeApp) {
+    document.querySelectorAll('a[href]').forEach(link => {
+      link.addEventListener('click', async event => {
+        event.preventDefault();
+        if (csvRows.length && !confirm('Leaving clears the live session. Export your data first. Leave this dashboard?')) return;
+        try {
+          await nativeApp.disconnect();
+          location.href = link.href;
+        } catch (err) { logEntry('error', err.message); }
+      });
+    });
+  }
+
   async function toggleConnect() {
+    if (nativeApp?.connected) {
+      try { await nativeApp.disconnect(); }
+      catch (err) { logEntry('error', err.message); }
+      return;
+    }
     if (device && device.gatt.connected) { device.gatt.disconnect(); onDisconnected(); }
     else await connect();
   }
@@ -443,6 +462,16 @@
     const charUUID    = document.getElementById('charUUID').value.trim().toLowerCase();
     setStatus('connecting');
     try {
+      if (nativeApp) {
+        const name = await nativeApp.connect({
+          serviceUUID, charUUID,
+          onData: value => onData({ target: { value } }),
+          onDisconnect: onDisconnected
+        });
+        setStatus('connected');
+        logEntry('system', `Connected to ${name}`);
+        return;
+      }
       device = await navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: [serviceUUID] });
       device.addEventListener('gattserverdisconnected', onDisconnected);
       const server = await device.gatt.connect();
@@ -459,6 +488,7 @@
       setStatus('connected');
       logEntry('system', 'Connected to openRow');
     } catch (err) {
+      if (device?.gatt.connected) device.gatt.disconnect();
       setStatus('disconnected');
       logEntry('error', err.message);
       console.error("Connection error:", err);
@@ -524,28 +554,37 @@
     logEntry('data', raw.trim());
   }
 
-  function exportCSV() {
-    if (csvRows.length === 0) return;
-    const content = CSV_HEADER + '\n' + csvRows.join('\n');
-    const blob = new Blob([content], { type: 'text/csv' });
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement('a');
-    const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-    a.href = url; a.download = `openrow_mantis_${stamp}.csv`; a.click();
-    URL.revokeObjectURL(url);
-    logEntry('system', `Exported ${csvRows.length} rows to CSV`);
+  async function exportFile(filename, content, type) {
+    if (nativeApp) {
+      await nativeApp.exportFile(filename, content);
+      return;
+    }
+    const blob = new Blob([content], { type });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
-  function exportTXT() {
+  async function exportCSV() {
+    if (csvRows.length === 0) return;
+    const content = CSV_HEADER + '\n' + csvRows.join('\n');
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    try {
+      await exportFile(`openrow_mantis_${stamp}.csv`, content, 'text/csv');
+      logEntry('system', `Exported ${csvRows.length} rows to CSV`);
+    } catch (err) { logEntry('error', `Export failed: ${err.message}`); }
+  }
+
+  async function exportTXT() {
     if (txtRows.length === 0) return;
     const content = txtRows.join('\n');
-    const blob = new Blob([content], { type: 'text/plain' });
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement('a');
     const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-    a.href = url; a.download = `openrow_mantis_${stamp}.txt`; a.click();
-    URL.revokeObjectURL(url);
-    logEntry('system', `Exported ${txtRows.length} rows to TXT`);
+    try {
+      await exportFile(`openrow_mantis_${stamp}.txt`, content, 'text/plain');
+      logEntry('system', `Exported ${txtRows.length} rows to TXT`);
+    } catch (err) { logEntry('error', `Export failed: ${err.message}`); }
   }
 
   function flashUpdate(id, value) {
@@ -579,7 +618,11 @@
     const entry = document.createElement('div');
     entry.className = 'log-entry new ' + type;
     const ts = new Date().toLocaleTimeString('en-US', { hour12:false, hour:'2-digit', minute:'2-digit', second:'2-digit' });
-    entry.innerHTML = `<span class="log-ts">${ts}</span><span class="log-data">${msg}</span>`;
+    const time = document.createElement('span');
+    time.className = 'log-ts'; time.textContent = ts;
+    const message = document.createElement('span');
+    message.className = 'log-data'; message.textContent = msg;
+    entry.append(time, message);
     logEl.prepend(entry);
     setTimeout(() => entry.classList.remove('new'), 400);
     while (logEl.children.length > 200) logEl.removeChild(logEl.lastChild);
